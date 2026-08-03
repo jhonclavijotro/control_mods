@@ -228,6 +228,7 @@
                                     <th>Motivo / Falla</th>
                                     <th>Diagnóstico</th>
                                     <th>Estado</th>
+                                    <th>Adjunto</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
@@ -250,6 +251,7 @@
                                     <th>Fecha / Hora</th>
                                     <th>Motivo de Cambio</th>
                                     <th>Técnico</th>
+                                    <th>Adjunto</th>
                                     <th>Acción</th>
                                 </tr>
                             </thead>
@@ -365,6 +367,11 @@
                         <label>Diagnóstico / Solución</label>
                         <input type="text" id="edit-repair-diagnosis" class="form-control">
                     </div>
+                    <div class="form-group">
+                        <label>Archivo Adjunto de Soporte <small class="text-muted">(Opcional: PDF, foto, informe técnico)</small></label>
+                        <input type="file" id="edit-repair-file-input" class="form-control">
+                        <div id="edit-repair-file-current" class="mt-1"></div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline close-modal">Cancelar</button>
@@ -407,6 +414,11 @@
                     <div class="form-group">
                         <label>Motivo del Cambio</label>
                         <textarea id="edit-rep-reason" required class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Archivo Adjunto de Soporte <small class="text-muted">(Opcional: PDF, foto, informe técnico)</small></label>
+                        <input type="file" id="edit-rep-file-input" class="form-control">
+                        <div id="edit-rep-file-current" class="mt-1"></div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -465,6 +477,11 @@
                         <label>Diagnóstico Preliminar (Opcional)</label>
                         <input type="text" id="stop-diagnosis" class="form-control" placeholder="Ej: Revisión en taller, pendiente cambio de varistor...">
                     </div>
+
+                    <div class="form-group">
+                        <label>Adjuntar Archivo / Soporte <small class="text-muted">(Opcional: PDF, fotos, informe de falla)</small></label>
+                        <input type="file" id="stop-file-input" class="form-control">
+                    </div>
                 </div>
 
                 <div class="modal-footer">
@@ -499,6 +516,11 @@
                     <div class="form-group">
                         <label>Diagnóstico Final / Solución Aplicada</label>
                         <textarea id="restart-diagnosis" class="form-control" rows="2" placeholder="Ej: Módulo reparado exitosamente. Se reemplazó la tarjeta de disparo y se superó prueba de aislamiento."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Adjuntar Informe de Pruebas / Protocolo <small class="text-muted">(Opcional: PDF, fotos)</small></label>
+                        <input type="file" id="restart-file-input" class="form-control">
                     </div>
                 </div>
 
@@ -572,6 +594,11 @@
                             <label>Motivo del Cambio</label>
                             <textarea id="replace-reason" required class="form-control" rows="1" placeholder="Ej: Sustitución preventiva por falla IGBT"></textarea>
                         </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Adjuntar Documento de Soporte <small class="text-muted">(Opcional: PDF, foto de reemplazo)</small></label>
+                        <input type="file" id="replace-file-input" class="form-control">
                     </div>
                 </div>
 

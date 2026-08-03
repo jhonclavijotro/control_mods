@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 import os
+import shutil
+import uuid
 from typing import Optional, List
 
 from .database import engine, Base, get_db, SessionLocal
@@ -15,10 +17,15 @@ from .solar_engine import calculate_module_metrics
 # Create Database tables
 Base.metadata.create_all(bind=engine)
 
+# Configure Uploads Directory
+DATA_DIR = os.path.dirname(os.path.abspath(engine.url.database)) if engine.url.database != ":memory:" else os.getcwd()
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 app = FastAPI(
     title="Control de Módulos de Potencia - Granja Solar",
     description="API REST para seguimiento, mantenimiento y métricas de unidades de inversión y módulos de potencia.",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 # Enable CORS for local development
@@ -30,6 +37,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+@app.post("/api/upload")
+async def upload_attachment(file: UploadFile = File(...)):
+    """Upload an optional file attachment (document, photo, report) for maintenance logs."""
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="Ningún archivo seleccionado.")
+
+    ext = os.path.splitext(file.filename)[1]
+    safe_basename = os.path.basename(file.filename)
+    unique_name = f"{uuid.uuid4().hex}_{safe_basename}"
+    dest_path = os.path.join(UPLOAD_DIR, unique_name)
+
+    with open(dest_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    web_url = f"/uploads/{unique_name}"
+    return {
+        "attachment_path": web_url,
+        "attachment_name": safe_basename
+    }
+
 # Pydantic Request Models
 class StopRepairRequest(BaseModel):
     inverter_id: str
@@ -37,11 +66,22 @@ class StopRepairRequest(BaseModel):
     stop_time: datetime
     reason: str
     diagnosis: Optional[str] = None
+    attachment_path: Optional[str] = None
+    attachment_name: Optional[str] = None
 
 class RestartRepairRequest(BaseModel):
     repair_id: int
     restart_time: datetime
     diagnosis: Optional[str] = None
+    attachment_path: Optional[str] = None
+    attachment_name: Optional[str] = None
+
+class RestartInverterRequest(BaseModel):
+    inverter_id: str
+    restart_time: datetime
+    diagnosis: Optional[str] = None
+    attachment_path: Optional[str] = None
+    attachment_name: Optional[str] = None
 
 class ModuleReplacementRequest(BaseModel):
     inverter_id: str
@@ -50,6 +90,8 @@ class ModuleReplacementRequest(BaseModel):
     reason: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     performed_by: Optional[str] = "Técnico Solar"
+    attachment_path: Optional[str] = None
+    attachment_name: Optional[str] = None
 
 class AddSpareModuleRequest(BaseModel):
     serial_number: str
@@ -348,7 +390,9 @@ def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db)):
                     restart_time=None,
                     reason=f"[PARADA GENERAL DE INVERSOR {inv_id}] {req.reason}",
                     diagnosis=req.diagnosis or "Parada total de unidad inversora",
-                    status="open"
+                    status="open",
+                    attachment_path=req.attachment_path,
+                    attachment_name=req.attachment_name
                 )
                 db.add(repair)
                 stopped_count += 1
@@ -378,7 +422,9 @@ def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db)):
         restart_time=None,
         reason=req.reason,
         diagnosis=req.diagnosis,
-        status="open"
+        status="open",
+        attachment_path=req.attachment_path,
+        attachment_name=req.attachment_name
     )
     db.add(repair)
     db.commit()
@@ -405,6 +451,10 @@ def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_
         r.status = "resolved"
         if req.diagnosis:
             r.diagnosis = f"[ARRANQUE GENERAL] {req.diagnosis}"
+        
+        if req.attachment_path:
+            r.attachment_path = req.attachment_path
+            r.attachment_name = req.attachment_name
 
         pm = db.query(PowerModule).filter(PowerModule.serial_number == r.serial_number).first()
         if pm and pm.status == "in_repair":
@@ -427,6 +477,10 @@ def register_repair_restart(req: RestartRepairRequest, db: Session = Depends(get
     repair.status = "resolved"
     if req.diagnosis:
         repair.diagnosis = req.diagnosis
+
+    if req.attachment_path:
+        repair.attachment_path = req.attachment_path
+        repair.attachment_name = req.attachment_name
 
     # Update module status back to operating if it is still installed
     pm = db.query(PowerModule).filter(PowerModule.serial_number == repair.serial_number).first()
@@ -486,7 +540,9 @@ def register_module_replacement(req: ModuleReplacementRequest, db: Session = Dep
         new_serial=req.new_serial,
         timestamp=req.timestamp,
         reason=req.reason,
-        performed_by=req.performed_by or "Técnico Solar"
+        performed_by=req.performed_by or "Técnico Solar",
+        attachment_path=req.attachment_path,
+        attachment_name=req.attachment_name
     )
     db.add(rep_log)
     db.commit()
@@ -540,7 +596,9 @@ def get_all_logs(db: Session = Depends(get_db)):
                 "restart_time": r.restart_time.isoformat() if r.restart_time else None,
                 "reason": r.reason,
                 "diagnosis": r.diagnosis,
-                "status": r.status
+                "status": r.status,
+                "attachment_path": r.attachment_path,
+                "attachment_name": r.attachment_name
             } for r in repairs
         ],
         "replacements": [
@@ -552,7 +610,9 @@ def get_all_logs(db: Session = Depends(get_db)):
                 "new_serial": rep.new_serial,
                 "timestamp": rep.timestamp.isoformat(),
                 "reason": rep.reason,
-                "performed_by": rep.performed_by
+                "performed_by": rep.performed_by,
+                "attachment_path": rep.attachment_path,
+                "attachment_name": rep.attachment_name
             } for rep in replacements
         ]
     }
@@ -687,6 +747,10 @@ def edit_repair_log(repair_id: int, req: EditRepairLogRequest, db: Session = Dep
     if req.diagnosis is not None:
         repair.diagnosis = req.diagnosis
 
+    if req.attachment_path:
+        repair.attachment_path = req.attachment_path
+        repair.attachment_name = req.attachment_name
+
     if req.restart_time:
         repair.status = "resolved"
         pm = db.query(PowerModule).filter(PowerModule.serial_number == repair.serial_number).first()
@@ -712,6 +776,10 @@ def edit_replacement_log(replacement_id: int, req: EditReplacementLogRequest, db
     rep.reason = req.reason
     if req.performed_by:
         rep.performed_by = req.performed_by
+
+    if req.attachment_path:
+        rep.attachment_path = req.attachment_path
+        rep.attachment_name = req.attachment_name
 
     db.commit()
     return {"message": "Registro de reemplazo actualizado exitosamente."}

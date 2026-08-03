@@ -475,10 +475,16 @@ document.addEventListener('DOMContentLoaded', () => {
         replacementsBody.innerHTML = '';
 
         if (logsData.repairs.length === 0) {
-            repairsBody.innerHTML = `<tr><td colspan="10" style="text-align:center;">No hay registros de parada por reparación.</td></tr>`;
+            repairsBody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No hay registros de parada por reparación.</td></tr>`;
         } else {
             logsData.repairs.forEach(r => {
                 const tr = document.createElement('tr');
+                const attachHtml = r.attachment_path ? `
+                    <a href="${r.attachment_path}" target="_blank" class="btn btn-outline btn-sm" style="color:var(--primary); border-color:rgba(6,182,212,0.3);" title="${r.attachment_name}">
+                        <i class="fa-solid fa-paperclip"></i> ${r.attachment_name.length > 12 ? r.attachment_name.substring(0, 12) + '...' : r.attachment_name}
+                    </a>
+                ` : '<span class="text-muted">-</span>';
+
                 tr.innerHTML = `
                     <td>#${r.id}</td>
                     <td><code>${r.serial_number}</code></td>
@@ -489,6 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${r.reason}</td>
                     <td>${r.diagnosis || '-'}</td>
                     <td><span class="status-tag ${r.status === 'open' ? 'in_repair' : 'operating'}">${r.status === 'open' ? 'Abierta' : 'Resuelta'}</span></td>
+                    <td>${attachHtml}</td>
                     <td>
                         <div style="display:flex; gap:0.3rem;">
                             ${r.status === 'open' ? `
@@ -507,10 +514,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (logsData.replacements.length === 0) {
-            replacementsBody.innerHTML = `<tr><td colspan="9" style="text-align:center;">No hay registros de reemplazo.</td></tr>`;
+            replacementsBody.innerHTML = `<tr><td colspan="10" style="text-align:center;">No hay registros de reemplazo.</td></tr>`;
         } else {
             logsData.replacements.forEach(rep => {
                 const tr = document.createElement('tr');
+                const attachHtml = rep.attachment_path ? `
+                    <a href="${rep.attachment_path}" target="_blank" class="btn btn-outline btn-sm" style="color:var(--primary); border-color:rgba(6,182,212,0.3);" title="${rep.attachment_name}">
+                        <i class="fa-solid fa-paperclip"></i> ${rep.attachment_name.length > 12 ? rep.attachment_name.substring(0, 12) + '...' : rep.attachment_name}
+                    </a>
+                ` : '<span class="text-muted">-</span>';
+
                 tr.innerHTML = `
                     <td>#${rep.id}</td>
                     <td><strong>${rep.inverter_id}</strong></td>
@@ -520,6 +533,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${formatDate(rep.timestamp)}</td>
                     <td>${rep.reason}</td>
                     <td>${rep.performed_by}</td>
+                    <td>${attachHtml}</td>
                     <td>
                         <button class="btn btn-outline btn-sm btn-edit-replacement-action" data-replacement-id="${rep.id}">
                             <i class="fa-solid fa-pen"></i> Editar
@@ -695,6 +709,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    async function uploadFileIfSelected(fileInputId) {
+        const input = document.getElementById(fileInputId);
+        if (!input || !input.files || input.files.length === 0) {
+            return { attachment_path: null, attachment_name: null };
+        }
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Error al subir archivo adjunto');
+        return await res.json();
+    }
+
     // Bind Forms Submission
     function bindFormEvents() {
         // Form 1: Stop Repair
@@ -707,6 +738,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const diagnosis = document.getElementById('stop-diagnosis').value;
 
             try {
+                const uploadRes = await uploadFileIfSelected('stop-file-input');
+
                 const res = await fetch('/api/repairs/stop', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -715,7 +748,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         slot_number: slotNum,
                         stop_time: stopTime,
                         reason: reason,
-                        diagnosis: diagnosis
+                        diagnosis: diagnosis,
+                        attachment_path: uploadRes.attachment_path,
+                        attachment_name: uploadRes.attachment_name
                     })
                 });
 
@@ -723,6 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 showToast(slotNum === 0 ? `Parada total registrada para Unidad ${invId}` : 'Parada por reparación registrada exitosamente');
                 modalStop.classList.remove('active');
+                document.getElementById('stop-file-input').value = '';
                 await loadAllData();
             } catch (err) {
                 showToast(err.message, 'error');
@@ -737,6 +773,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const diagnosis = document.getElementById('restart-diagnosis').value;
 
             try {
+                const uploadRes = await uploadFileIfSelected('restart-file-input');
+
                 if (repairId === 0) {
                     const currentInv = ['A1','A2','B1','B2','C1','C2','D1','E1'].includes(currentTab) ? currentTab : 'A1';
                     const res = await fetch('/api/repairs/restart-inverter', {
@@ -745,7 +783,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify({
                             inverter_id: currentInv,
                             restart_time: restartTime,
-                            diagnosis: diagnosis
+                            diagnosis: diagnosis,
+                            attachment_path: uploadRes.attachment_path,
+                            attachment_name: uploadRes.attachment_name
                         })
                     });
 
@@ -759,7 +799,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify({
                             repair_id: repairId,
                             restart_time: restartTime,
-                            diagnosis: diagnosis
+                            diagnosis: diagnosis,
+                            attachment_path: uploadRes.attachment_path,
+                            attachment_name: uploadRes.attachment_name
                         })
                     });
 
@@ -769,6 +811,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 modalRestart.classList.remove('active');
+                document.getElementById('restart-file-input').value = '';
                 await loadAllData();
             } catch (err) {
                 showToast(err.message, 'error');
@@ -794,6 +837,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const tech = document.getElementById('replace-technician').value;
 
             try {
+                const uploadRes = await uploadFileIfSelected('replace-file-input');
+
                 const res = await fetch('/api/replacements', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -803,7 +848,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         new_serial: newSerial,
                         reason: reason,
                         timestamp: timestamp,
-                        performed_by: tech
+                        performed_by: tech,
+                        attachment_path: uploadRes.attachment_path,
+                        attachment_name: uploadRes.attachment_name
                     })
                 });
 
@@ -811,6 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 showToast(`Reemplazo de módulo registrado: ${newSerial}`);
                 modalReplace.classList.remove('active');
+                document.getElementById('replace-file-input').value = '';
                 await loadAllData();
             } catch (err) {
                 showToast(err.message, 'error');
@@ -874,6 +922,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const diagnosis = document.getElementById('edit-repair-diagnosis').value;
 
             try {
+                const uploadRes = await uploadFileIfSelected('edit-repair-file-input');
+
                 const res = await fetch(`/api/repairs/${repairId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -881,7 +931,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         stop_time: stopTime,
                         restart_time: restartTime,
                         reason: reason,
-                        diagnosis: diagnosis
+                        diagnosis: diagnosis,
+                        attachment_path: uploadRes.attachment_path,
+                        attachment_name: uploadRes.attachment_name
                     })
                 });
 
@@ -889,6 +941,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 showToast('Registro de reparación corregido exitosamente');
                 document.getElementById('modal-edit-repair-event').classList.remove('active');
+                document.getElementById('edit-repair-file-input').value = '';
                 await loadAllData();
             } catch (err) {
                 showToast(err.message, 'error');
@@ -904,13 +957,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const tech = document.getElementById('edit-rep-technician').value;
 
             try {
+                const uploadRes = await uploadFileIfSelected('edit-rep-file-input');
+
                 const res = await fetch(`/api/replacements/${repId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         timestamp: timestamp,
                         reason: reason,
-                        performed_by: tech
+                        performed_by: tech,
+                        attachment_path: uploadRes.attachment_path,
+                        attachment_name: uploadRes.attachment_name
                     })
                 });
 
@@ -918,6 +975,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 showToast('Registro de reemplazo corregido exitosamente');
                 document.getElementById('modal-edit-replacement-event').classList.remove('active');
+                document.getElementById('edit-rep-file-input').value = '';
                 await loadAllData();
             } catch (err) {
                 showToast(err.message, 'error');

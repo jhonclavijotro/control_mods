@@ -45,6 +45,8 @@ class RepairLog(Base):
     reason = Column(Text, nullable=False)
     diagnosis = Column(Text, nullable=True)
     status = Column(String, default="open")  # open, resolved
+    attachment_path = Column(String, nullable=True)
+    attachment_name = Column(String, nullable=True)
 
 class ReplacementLog(Base):
     __tablename__ = "replacement_logs"
@@ -57,3 +59,5 @@ class ReplacementLog(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     reason = Column(Text, nullable=False)
     performed_by = Column(String, default="Técnico Solar")
+    attachment_path = Column(String, nullable=True)
+    attachment_name = Column(String, nullable=True)
