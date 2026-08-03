@@ -10,12 +10,13 @@ import shutil
 import uuid
 from typing import Optional, List
 
-from .database import engine, Base, get_db, SessionLocal
+from .database import engine, Base, get_db, SessionLocal, auto_migrate_db_schema
 from .models import Inverter, ModuleSlot, PowerModule, RepairLog, ReplacementLog
 from .solar_engine import calculate_module_metrics
 
-# Create Database tables
+# Create Database tables and auto-migrate schema
 Base.metadata.create_all(bind=engine)
+auto_migrate_db_schema()
 
 # Configure Uploads Directory
 DATA_DIR = os.path.dirname(os.path.abspath(engine.url.database)) if engine.url.database != ":memory:" else os.getcwd()

@@ -23,3 +23,36 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def auto_migrate_db_schema():
+    """Auto-migrate SQLite database tables to ensure missing columns are added automatically."""
+    import sqlite3
+    if not os.path.exists(DB_PATH):
+        return
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        # Migrate repair_logs
+        cursor.execute("PRAGMA table_info(repair_logs)")
+        rep_cols = [row[1] for row in cursor.fetchall()]
+        if rep_cols:
+            if "attachment_path" not in rep_cols:
+                cursor.execute("ALTER TABLE repair_logs ADD COLUMN attachment_path TEXT")
+            if "attachment_name" not in rep_cols:
+                cursor.execute("ALTER TABLE repair_logs ADD COLUMN attachment_name TEXT")
+
+        # Migrate replacement_logs
+        cursor.execute("PRAGMA table_info(replacement_logs)")
+        repl_cols = [row[1] for row in cursor.fetchall()]
+        if repl_cols:
+            if "attachment_path" not in repl_cols:
+                cursor.execute("ALTER TABLE replacement_logs ADD COLUMN attachment_path TEXT")
+            if "attachment_name" not in repl_cols:
+                cursor.execute("ALTER TABLE replacement_logs ADD COLUMN attachment_name TEXT")
+
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Warning during automatic DB schema migration: {e}")
