@@ -1,0 +1,19 @@
+services:
+  solar-control-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: solar_farm_control
+    ports:
+      - "8000:8000"
+    volumes:
+      # Montaje de volumen persistente para la base de datos SQLite
+      - ./data:/app/data
+    environment:
+      - DATA_DIR=/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/dashboard"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

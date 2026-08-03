@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Granja Solar - Control de Módulos de Potencia</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome / Lucide Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+    <!-- Header Navigation Bar -->
+    <header class="app-header">
+        <div class="header-brand">
+            <div class="logo-icon">
+                <i class="fa-solid fa-sun-plant-wilt"></i>
+            </div>
+            <div>
+                <h1>SOLARIS CONTROL</h1>
+                <p>Sistema de Mantenimiento y Seguimiento de Unidades Inversoras</p>
+            </div>
+        </div>
+
+        <div class="header-status">
+            <div class="solar-schedule-badge">
+                <i class="fa-regular fa-clock"></i> Horario de Operación: <strong>07:00 AM - 06:00 PM (11h/día)</strong>
+            </div>
+            <button id="btn-seed-clean" class="btn btn-danger" title="Limpiar base de datos a 0 horas y sin reparaciones para ingresar seriales reales">
+                <i class="fa-solid fa-broom"></i> Limpiar a Cero
+            </button>
+            <button id="btn-seed-reset" class="btn btn-outline" title="Reiniciar datos iniciales de demostración">
+                <i class="fa-solid fa-rotate"></i> Datos Demo
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container">
+
+        <!-- Navigation Tabs Bar -->
+        <nav class="tabs-nav-wrapper">
+            <div class="tabs-scroll" id="tabs-bar">
+                <button class="tab-btn active" data-tab="dashboard">
+                    <i class="fa-solid fa-chart-pie"></i> Dashboard
+                </button>
+                <button class="tab-btn" data-tab="A1">⚡ A1 <span class="mod-badge">6 Mód.</span></button>
+                <button class="tab-btn" data-tab="A2">⚡ A2 <span class="mod-badge">6 Mód.</span></button>
+                <button class="tab-btn" data-tab="B1">⚡ B1 <span class="mod-badge">6 Mód.</span></button>
+                <button class="tab-btn" data-tab="B2">⚡ B2 <span class="mod-badge">6 Mód.</span></button>
+                <button class="tab-btn" data-tab="C1">⚡ C1 <span class="mod-badge">6 Mód.</span></button>
+                <button class="tab-btn" data-tab="C2">⚡ C2 <span class="mod-badge">6 Mód.</span></button>
+                <button class="tab-btn" data-tab="D1">⚡ D1 <span class="mod-badge">6 Mód.</span></button>
+                <button class="tab-btn" data-tab="E1">⚡ E1 <span class="mod-badge">4 Mód.</span></button>
+                <button class="tab-btn" data-tab="spares">
+                    <i class="fa-solid fa-boxes-stacked"></i> Respaldo
+                </button>
+                <button class="tab-btn" data-tab="history">
+                    <i class="fa-solid fa-list-check"></i> Historial
+                </button>
+                <button class="tab-btn" data-tab="modules">
+                    <i class="fa-solid fa-microchip"></i> Catálogo Módulos
+                </button>
+            </div>
+        </nav>
+
+        <!-- Tab Content Areas -->
+        <section class="content-wrapper">
+
+            <!-- 1. DASHBOARD OVERVIEW TAB -->
+            <div class="tab-pane active" id="tab-dashboard">
+                <div class="pane-header">
+                    <h2><i class="fa-solid fa-chart-line"></i> Estado General de la Granja Solar</h2>
+                    <p>Métricas de operación consolidada, paradas en curso y rendimiento global.</p>
+                </div>
+
+                <!-- KPI Metric Cards -->
+                <div class="kpi-grid">
+                    <div class="kpi-card success">
+                        <div class="kpi-icon"><i class="fa-solid fa-bolt"></i></div>
+                        <div class="kpi-content">
+                            <span class="kpi-label">Módulos Operativos</span>
+                            <h3 id="dash-op-count">--</h3>
+                            <span class="kpi-sub">de 46 módulos activos</span>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card warning">
+                        <div class="kpi-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div class="kpi-content">
+                            <span class="kpi-label">En Reparación</span>
+                            <h3 id="dash-repair-count">--</h3>
+                            <span class="kpi-sub">paradas pendientes</span>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card info">
+                        <div class="kpi-icon"><i class="fa-solid fa-boxes-packing"></i></div>
+                        <div class="kpi-content">
+                            <span class="kpi-label">Módulos de Respaldo</span>
+                            <h3 id="dash-spare-count">--</h3>
+                            <span class="kpi-sub">disponibles en stock</span>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card primary">
+                        <div class="kpi-icon"><i class="fa-solid fa-clock"></i></div>
+                        <div class="kpi-content">
+                            <span class="kpi-label">Horas Solares Generadas</span>
+                            <h3 id="dash-total-hours">--</h3>
+                            <span class="kpi-sub">ventana 7am-6pm acumulada</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Farm Topology Grid -->
+                <div class="section-block">
+                    <div class="block-title">
+                        <h3><i class="fa-solid fa-network-wired"></i> Matriz de Unidades Inversoras</h3>
+                        <span>Resumen rápido de salud por inversor</span>
+                    </div>
+                    <div class="inverters-summary-grid" id="inverters-summary-container">
+                        <!-- Dynamic Inverter Cards rendering -->
+                    </div>
+                </div>
+
+                <!-- Recent Activity Table -->
+                <div class="section-block">
+                    <div class="block-title">
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i> Últimos Eventos Registrados</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha / Hora</th>
+                                    <th>Inversor</th>
+                                    <th>Slot</th>
+                                    <th>Serial</th>
+                                    <th>Evento</th>
+                                    <th>Detalles / Razón</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dash-recent-table">
+                                <!-- Dynamic recent logs -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. INVERTER DETAIL TAB (Template for A1..E1 dynamically handled) -->
+            <div class="tab-pane" id="tab-inverter">
+                <div class="pane-header flex-between">
+                    <div>
+                        <h2 id="inv-title">⚡ Unidad Inversora A1</h2>
+                        <p id="inv-subtitle">6 Módulos de Potencia Instalados</p>
+                    </div>
+                    <div class="inv-header-actions">
+                        <button class="btn btn-danger" id="btn-stop-inverter-all" title="Detener todos los módulos de esta unidad inversora">
+                            <i class="fa-solid fa-power-off"></i> Parada Total Inversor
+                        </button>
+                        <button class="btn btn-success" id="btn-restart-inverter-all" title="Reanudar todos los módulos detenidos de esta unidad">
+                            <i class="fa-solid fa-play"></i> Arranque Total Inversor
+                        </button>
+                        <button class="btn btn-primary" id="btn-quick-stop">
+                            <i class="fa-solid fa-pause"></i> Parada Módulo
+                        </button>
+                        <button class="btn btn-secondary" id="btn-quick-replace">
+                            <i class="fa-solid fa-arrows-rotate"></i> Reemplazar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Grid of Module Slots -->
+                <div class="modules-grid" id="inverter-slots-container">
+                    <!-- Rendered by JS -->
+                </div>
+            </div>
+
+            <!-- 3. SPARES INVENTORY TAB -->
+            <div class="tab-pane" id="tab-spares">
+                <div class="pane-header flex-between">
+                    <div>
+                        <h2><i class="fa-solid fa-boxes-stacked"></i> Inventario de Módulos de Respaldo</h2>
+                        <p>Gestión de módulos disponibles para sustitución inmediata en caso de avería.</p>
+                    </div>
+                    <button class="btn btn-primary" id="btn-add-spare">
+                        <i class="fa-solid fa-plus"></i> Agregar Módulo de Respaldo
+                    </button>
+                </div>
+
+                <div class="spares-grid" id="spares-list-container">
+                    <!-- Rendered by JS -->
+                </div>
+            </div>
+
+            <!-- 4. GLOBAL HISTORY & REPORTS TAB -->
+            <div class="tab-pane" id="tab-history">
+                <div class="pane-header flex-between">
+                    <div>
+                        <h2><i class="fa-solid fa-book"></i> Registros e Historial Completo de Mantenimiento</h2>
+                        <p>Auditoría de paradas por reparación y sustituciones de módulos de potencia.</p>
+                    </div>
+                    <button class="btn btn-outline" id="btn-export-csv">
+                        <i class="fa-solid fa-file-csv"></i> Exportar a CSV
+                    </button>
+                </div>
+
+                <div class="history-tables-wrapper">
+                    <h3>Paradas por Reparación</h3>
+                    <div class="table-responsive mb-4">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Serial Módulo</th>
+                                    <th>Inversor</th>
+                                    <th>Slot</th>
+                                    <th>Fecha Parada</th>
+                                    <th>Fecha Arranque</th>
+                                    <th>Motivo / Falla</th>
+                                    <th>Diagnóstico</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-repairs-body">
+                                <!-- Rendered by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3>Reemplazos Realizados</h3>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Inversor</th>
+                                    <th>Slot</th>
+                                    <th>Serial Saliente</th>
+                                    <th>Serial Entrante</th>
+                                    <th>Fecha / Hora</th>
+                                    <th>Motivo de Cambio</th>
+                                    <th>Técnico</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-replacements-body">
+                                <!-- Rendered by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. ALL MODULES CATALOG TAB -->
+            <div class="tab-pane" id="tab-modules">
+                <div class="pane-header flex-between">
+                    <div>
+                        <h2><i class="fa-solid fa-microchip"></i> Catálogo e Inventario General de Módulos</h2>
+                        <p>Consolidado global de todos los módulos de potencia registrados en la granja solar. Permite corregir números de serie.</p>
+                    </div>
+                    <div class="form-group mb-0" style="width: 280px;">
+                        <input type="text" id="catalog-search-input" class="form-control" placeholder="🔍 Buscar por Serial o Inversor...">
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Número Serial</th>
+                                <th>Inversor Asignado</th>
+                                <th>Slot</th>
+                                <th>Estado</th>
+                                <th>Horas Operación (7am-6pm)</th>
+                                <th>Reparaciones</th>
+                                <th>Disponibilidad %</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modules-catalog-body">
+                            <!-- Rendered by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- MODALS -->
+
+    <!-- Modal 5: Editar Serial de Módulo -->
+    <div class="modal-overlay" id="modal-edit-serial">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-pen-to-square"></i> Editar Número Serial de Módulo</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="form-edit-serial">
+                <input type="hidden" id="edit-serial-old-input">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Serial Actual</label>
+                        <input type="text" id="edit-serial-old-display" class="form-control" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>Nuevo Número Serial Corregido</label>
+                        <input type="text" id="edit-serial-new-input" required class="form-control" placeholder="Ej: PM-A1-M1-CORRECT">
+                        <small class="text-muted">Esta acción actualizará el serial en todos los slots, registros e historial asociados.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline close-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Guardar Serial Corregido</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 6: Editar Evento de Parada / Reparación -->
+    <div class="modal-overlay" id="modal-edit-repair-event">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-pen-to-square"></i> Corregir Registro de Reparación</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="form-edit-repair-event">
+                <input type="hidden" id="edit-repair-id-input">
+                <div class="modal-body">
+                    <div class="form-row grid-2">
+                        <div class="form-group">
+                            <label>Módulo Serial</label>
+                            <input type="text" id="edit-repair-serial-display" class="form-control" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Inversor / Slot</label>
+                            <input type="text" id="edit-repair-location-display" class="form-control" readonly>
+                        </div>
+                    </div>
+                    <div class="form-row grid-2">
+                        <div class="form-group">
+                            <label>Fecha / Hora Parada</label>
+                            <input type="datetime-local" id="edit-repair-stop-time" required class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label>Fecha / Hora Arranque (Dejar vacío si está en proceso)</label>
+                            <input type="datetime-local" id="edit-repair-restart-time" class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Motivo / Falla</label>
+                        <textarea id="edit-repair-reason" required class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Diagnóstico / Solución</label>
+                        <input type="text" id="edit-repair-diagnosis" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline close-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 7: Editar Evento de Reemplazo -->
+    <div class="modal-overlay" id="modal-edit-replacement-event">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-pen-to-square"></i> Corregir Registro de Reemplazo</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="form-edit-replacement-event">
+                <input type="hidden" id="edit-replacement-id-input">
+                <div class="modal-body">
+                    <div class="form-row grid-2">
+                        <div class="form-group">
+                            <label>Serial Saliente</label>
+                            <input type="text" id="edit-rep-old-display" class="form-control" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Serial Entrante</label>
+                            <input type="text" id="edit-rep-new-display" class="form-control" readonly>
+                        </div>
+                    </div>
+                    <div class="form-row grid-2">
+                        <div class="form-group">
+                            <label>Fecha y Hora del Cambio</label>
+                            <input type="datetime-local" id="edit-rep-timestamp" required class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label>Técnico Responsable</label>
+                            <input type="text" id="edit-rep-technician" class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Motivo del Cambio</label>
+                        <textarea id="edit-rep-reason" required class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline close-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODALS -->
+
+    <!-- Modal 1: Registrar Parada por Reparación -->
+    <div class="modal-overlay" id="modal-stop-repair">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-triangle-exclamation"></i> Registrar Parada por Reparación</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="form-stop-repair">
+                <div class="modal-body">
+                    <div class="form-row grid-2">
+                        <div class="form-group">
+                            <label>Unidad Inversora</label>
+                            <select id="stop-inverter-id" required class="form-control">
+                                <option value="A1">A1</option>
+                                <option value="A2">A2</option>
+                                <option value="B1">B1</option>
+                                <option value="B2">B2</option>
+                                <option value="C1">C1</option>
+                                <option value="C2">C2</option>
+                                <option value="D1">D1</option>
+                                <option value="E1">E1</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Número de Slot (Módulo)</label>
+                            <select id="stop-slot-number" required class="form-control">
+                                <!-- Populated by JS -->
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Fecha y Hora de Parada</label>
+                        <input type="datetime-local" id="stop-time" required class="form-control">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Razón / Motivo de la Parada</label>
+                        <textarea id="stop-reason" required class="form-control" rows="2" placeholder="Ej: Falla por sobrecalentamiento, falla de aislamiento, disparo de protección..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Diagnóstico Preliminar (Opcional)</label>
+                        <input type="text" id="stop-diagnosis" class="form-control" placeholder="Ej: Revisión en taller, pendiente cambio de varistor...">
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline close-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger"><i class="fa-solid fa-save"></i> Registrar Parada</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 2: Registrar Arranque post-Reparación -->
+    <div class="modal-overlay" id="modal-restart-repair">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-play"></i> Registrar Arranque de Módulo Reparado</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="form-restart-repair">
+                <input type="hidden" id="restart-repair-id">
+
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Módulo Serial / Inversor</label>
+                        <input type="text" id="restart-serial-info" class="form-control" readonly>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Fecha y Hora de Arranque</label>
+                        <input type="datetime-local" id="restart-time" required class="form-control">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Diagnóstico Final / Solución Aplicada</label>
+                        <textarea id="restart-diagnosis" class="form-control" rows="2" placeholder="Ej: Módulo reparado exitosamente. Se reemplazó la tarjeta de disparo y se superó prueba de aislamiento."></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline close-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success"><i class="fa-solid fa-circle-check"></i> Finalizar Reparación y Arrancar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 3: Registrar Reemplazo de Módulo por Módulo de Respaldo -->
+    <div class="modal-overlay" id="modal-replace-module">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-arrows-rotate"></i> Registrar Reemplazo de Módulo</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="form-replace-module">
+                <div class="modal-body">
+                    <div class="form-row grid-2">
+                        <div class="form-group">
+                            <label>Unidad Inversora</label>
+                            <select id="replace-inverter-id" required class="form-control">
+                                <option value="A1">A1</option>
+                                <option value="A2">A2</option>
+                                <option value="B1">B1</option>
+                                <option value="B2">B2</option>
+                                <option value="C1">C1</option>
+                                <option value="C2">C2</option>
+                                <option value="D1">D1</option>
+                                <option value="E1">E1</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Slot a Reemplazar</label>
+                            <select id="replace-slot-number" required class="form-control">
+                                <!-- Populated by JS -->
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row grid-2">
+                        <div class="form-group">
+                            <label>Módulo Saliente (Serial Actual)</label>
+                            <input type="text" id="replace-old-serial" class="form-control" readonly>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Fecha y Hora del Cambio</label>
+                            <input type="datetime-local" id="replace-timestamp" required class="form-control">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Módulo Entrante (Seleccionar Respaldo)</label>
+                        <select id="replace-new-serial-select" class="form-control">
+                            <!-- Populated from spares list -->
+                        </select>
+                        <input type="text" id="replace-new-serial-custom" class="form-control mt-1" placeholder="o ingrese un nuevo serial: PM-NEW-9901">
+                    </div>
+
+                    <div class="form-row grid-2">
+                        <div class="form-group">
+                            <label>Técnico Responsable</label>
+                            <input type="text" id="replace-technician" class="form-control" value="Técnico Solar" placeholder="Nombre o firma">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Motivo del Cambio</label>
+                            <textarea id="replace-reason" required class="form-control" rows="1" placeholder="Ej: Sustitución preventiva por falla IGBT"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline close-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-arrows-rotate"></i> Confirmar Reemplazo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 4: Agregar Módulo de Respaldo -->
+    <div class="modal-overlay" id="modal-add-spare">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-plus-circle"></i> Nuevo Módulo de Respaldo</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="form-add-spare">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Número Serial Único</label>
+                        <input type="text" id="spare-serial-input" required class="form-control" placeholder="Ej: PM-SPARE-007">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline close-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success"><i class="fa-solid fa-check"></i> Guardar en Inventario</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- JS Code -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
