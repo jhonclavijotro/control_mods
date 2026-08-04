@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bindModalEvents();
         bindFormEvents();
         bindActionButtons();
+        bindHistoryFilterEvents();
         loadAllData();
     }
 
@@ -278,6 +279,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="btn btn-secondary btn-sm btn-replace-action" data-inv="${inv.id}" data-slot="${slot.slot_number}" data-serial="${slot.current_serial}">
                         <i class="fa-solid fa-arrows-rotate"></i> Reemplazar
                     </button>
+                    <button class="btn btn-outline btn-sm btn-module-history-action" data-serial="${slot.current_serial}" title="Ver historial de fallas de este módulo">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Historial
+                    </button>
                 </div>
             `;
 
@@ -297,9 +301,18 @@ document.addEventListener('DOMContentLoaded', () => {
             b.onclick = () => openReplaceModal(b.dataset.inv, parseInt(b.dataset.slot), b.dataset.serial);
         });
 
+        slotsContainer.querySelectorAll('.btn-module-history-action').forEach(b => {
+            b.onclick = () => navigateToHistoryWithFilter({ serial: b.dataset.serial });
+        });
+
         // Bind Header Action Buttons dynamically for current inverter
         const btnStopAll = document.getElementById('btn-stop-inverter-all');
         const btnRestartAll = document.getElementById('btn-restart-inverter-all');
+        const btnViewHistory = document.getElementById('btn-inverter-view-history');
+
+        if (btnViewHistory) {
+            btnViewHistory.onclick = () => navigateToHistoryWithFilter({ inverter: inv.id });
+        }
 
         if (btnStopAll) {
             btnStopAll.innerHTML = `<i class="fa-solid fa-power-off"></i> Parada Total ${inv.id}`;
@@ -440,6 +453,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td><strong style="color:${met.uptime_percent >= 90 ? 'var(--primary)' : 'var(--accent-amber)'}">${met.uptime_percent}%</strong></td>
                     <td>
                         <div style="display:flex; gap:0.3rem;">
+                            <button class="btn btn-outline btn-sm btn-module-history-action" data-serial="${m.serial_number}" title="Ver historial de fallas del módulo">
+                                <i class="fa-solid fa-clock-rotate-left"></i> Historial
+                            </button>
                             <button class="btn btn-outline btn-sm btn-edit-serial-action" data-serial="${m.serial_number}">
                                 <i class="fa-solid fa-pen"></i> Editar Serial
                             </button>
@@ -450,6 +466,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 `;
                 body.appendChild(tr);
+            });
+
+            body.querySelectorAll('.btn-module-history-action').forEach(b => {
+                b.onclick = () => navigateToHistoryWithFilter({ serial: b.dataset.serial });
             });
 
             body.querySelectorAll('.btn-edit-serial-action').forEach(b => {
@@ -466,18 +486,79 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('catalog-search-input').oninput = renderModulesCatalog;
 
-    // Render History & Reports Tab
+    // Render History & Reports Tab with Dynamic Filtering
     function renderHistory() {
+        const invFilter = (document.getElementById('history-filter-inverter')?.value || '').trim();
+        const serialFilter = (document.getElementById('history-filter-serial')?.value || '').trim().toLowerCase();
+        const statusFilter = (document.getElementById('history-filter-status')?.value || 'all').trim().toLowerCase();
+        const searchFilter = (document.getElementById('history-filter-search')?.value || '').trim().toLowerCase();
+
         const repairsBody = document.getElementById('history-repairs-body');
         const replacementsBody = document.getElementById('history-replacements-body');
+        const counterEl = document.getElementById('history-results-counter');
 
         repairsBody.innerHTML = '';
         replacementsBody.innerHTML = '';
 
-        if (logsData.repairs.length === 0) {
-            repairsBody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No hay registros de parada por reparación.</td></tr>`;
+        // Filter Repair Logs
+        const filteredRepairs = logsData.repairs.filter(r => {
+            if (invFilter && (r.inverter_id || '').toUpperCase() !== invFilter.toUpperCase()) return false;
+            if (serialFilter && !(r.serial_number || '').toLowerCase().includes(serialFilter)) return false;
+            if (statusFilter !== 'all' && (r.status || '').toLowerCase() !== statusFilter) return false;
+            if (searchFilter) {
+                const matchReason = (r.reason || '').toLowerCase().includes(searchFilter);
+                const matchDiag = (r.diagnosis || '').toLowerCase().includes(searchFilter);
+                const matchSerial = (r.serial_number || '').toLowerCase().includes(searchFilter);
+                const matchInv = (r.inverter_id || '').toLowerCase().includes(searchFilter);
+                if (!matchReason && !matchDiag && !matchSerial && !matchInv) return false;
+            }
+            return true;
+        });
+
+        // Filter Replacement Logs
+        const filteredReplacements = logsData.replacements.filter(rep => {
+            if (invFilter && (rep.inverter_id || '').toUpperCase() !== invFilter.toUpperCase()) return false;
+            if (serialFilter) {
+                const matchOld = (rep.old_serial || '').toLowerCase().includes(serialFilter);
+                const matchNew = (rep.new_serial || '').toLowerCase().includes(serialFilter);
+                if (!matchOld && !matchNew) return false;
+            }
+            if (searchFilter) {
+                const matchReason = (rep.reason || '').toLowerCase().includes(searchFilter);
+                const matchTech = (rep.performed_by || '').toLowerCase().includes(searchFilter);
+                const matchOld = (rep.old_serial || '').toLowerCase().includes(searchFilter);
+                const matchNew = (rep.new_serial || '').toLowerCase().includes(searchFilter);
+                const matchInv = (rep.inverter_id || '').toLowerCase().includes(searchFilter);
+                if (!matchReason && !matchTech && !matchOld && !matchNew && !matchInv) return false;
+            }
+            return true;
+        });
+
+        // Update Results Counter Badge Bar
+        const isFiltered = invFilter || serialFilter || (statusFilter !== 'all') || searchFilter;
+        if (counterEl) {
+            let activeLabels = [];
+            if (invFilter) activeLabels.push(`Inversor: <strong>${invFilter}</strong>`);
+            if (serialFilter) activeLabels.push(`Serial: <strong>"${serialFilter}"</strong>`);
+            if (statusFilter !== 'all') activeLabels.push(`Estado: <strong>${statusFilter === 'open' ? 'Abierta' : 'Resuelta'}</strong>`);
+            if (searchFilter) activeLabels.push(`Búsqueda: <strong>"${searchFilter}"</strong>`);
+
+            const filterDetails = isFiltered ? `<span style="margin-left:0.5rem; color:var(--primary); font-size:0.8rem;">[${activeLabels.join(' | ')}]</span>` : '';
+
+            counterEl.innerHTML = `
+                <div>
+                    <i class="fa-solid fa-filter"></i> 
+                    Mostrando <span class="badge-count">${filteredRepairs.length} de ${logsData.repairs.length}</span> paradas por reparación 
+                    y <span class="badge-count">${filteredReplacements.length} de ${logsData.replacements.length}</span> reemplazos.${filterDetails}
+                </div>
+            `;
+        }
+
+        // Render Repairs Table Body
+        if (filteredRepairs.length === 0) {
+            repairsBody.innerHTML = `<tr><td colspan="11" style="text-align:center;" class="text-muted">No se encontraron paradas por reparación coincidentes.</td></tr>`;
         } else {
-            logsData.repairs.forEach(r => {
+            filteredRepairs.forEach(r => {
                 const tr = document.createElement('tr');
                 const attachHtml = r.attachment_path ? `
                     <a href="${r.attachment_path}" target="_blank" class="btn btn-outline btn-sm" style="color:var(--primary); border-color:rgba(6,182,212,0.3);" title="${r.attachment_name}">
@@ -487,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 tr.innerHTML = `
                     <td>#${r.id}</td>
-                    <td><code>${r.serial_number}</code></td>
+                    <td><code style="cursor:pointer; color:var(--secondary);" class="btn-filter-this-serial" data-serial="${r.serial_number}" title="Filtrar historial por este serial">${r.serial_number}</code></td>
                     <td><strong>${r.inverter_id}</strong></td>
                     <td>Slot ${r.slot_number}</td>
                     <td>${formatDate(r.stop_time)}</td>
@@ -513,10 +594,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        if (logsData.replacements.length === 0) {
-            replacementsBody.innerHTML = `<tr><td colspan="10" style="text-align:center;">No hay registros de reemplazo.</td></tr>`;
+        // Render Replacements Table Body
+        if (filteredReplacements.length === 0) {
+            replacementsBody.innerHTML = `<tr><td colspan="10" style="text-align:center;" class="text-muted">No se encontraron reemplazos coincidentes.</td></tr>`;
         } else {
-            logsData.replacements.forEach(rep => {
+            filteredReplacements.forEach(rep => {
                 const tr = document.createElement('tr');
                 const attachHtml = rep.attachment_path ? `
                     <a href="${rep.attachment_path}" target="_blank" class="btn btn-outline btn-sm" style="color:var(--primary); border-color:rgba(6,182,212,0.3);" title="${rep.attachment_name}">
@@ -528,8 +610,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>#${rep.id}</td>
                     <td><strong>${rep.inverter_id}</strong></td>
                     <td>Slot ${rep.slot_number}</td>
-                    <td><code style="color:#f87171">${rep.old_serial}</code></td>
-                    <td><code style="color:#34d399">${rep.new_serial}</code></td>
+                    <td><code style="color:#f87171; cursor:pointer;" class="btn-filter-this-serial" data-serial="${rep.old_serial}" title="Filtrar por serial saliente">${rep.old_serial}</code></td>
+                    <td><code style="color:#34d399; cursor:pointer;" class="btn-filter-this-serial" data-serial="${rep.new_serial}" title="Filtrar por serial entrante">${rep.new_serial}</code></td>
                     <td>${formatDate(rep.timestamp)}</td>
                     <td>${rep.reason}</td>
                     <td>${rep.performed_by}</td>
@@ -544,7 +626,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Bind restart and edit buttons inside history table
+        // Bind inner actions
         repairsBody.querySelectorAll('.btn-restart-action').forEach(b => {
             b.onclick = () => openRestartModal(parseInt(b.dataset.repairId), b.dataset.serial);
         });
@@ -556,6 +638,55 @@ document.addEventListener('DOMContentLoaded', () => {
         replacementsBody.querySelectorAll('.btn-edit-replacement-action').forEach(b => {
             b.onclick = () => openEditReplacementModal(parseInt(b.dataset.replacementId));
         });
+
+        // Quick click on code serial to filter history
+        document.querySelectorAll('.btn-filter-this-serial').forEach(codeEl => {
+            codeEl.onclick = () => {
+                const serial = codeEl.dataset.serial;
+                if (serial && serial !== 'NINGUNO') {
+                    const serialInput = document.getElementById('history-filter-serial');
+                    if (serialInput) serialInput.value = serial;
+                    renderHistory();
+                }
+            };
+        });
+    }
+
+    function navigateToHistoryWithFilter(filters = {}) {
+        const invInput = document.getElementById('history-filter-inverter');
+        const serialInput = document.getElementById('history-filter-serial');
+        const statusInput = document.getElementById('history-filter-status');
+        const searchInput = document.getElementById('history-filter-search');
+
+        if (filters.inverter !== undefined && invInput) invInput.value = filters.inverter;
+        if (filters.serial !== undefined && serialInput) serialInput.value = filters.serial;
+        if (filters.status !== undefined && statusInput) statusInput.value = filters.status;
+        if (filters.search !== undefined && searchInput) searchInput.value = filters.search;
+
+        switchTab('history');
+    }
+
+    function bindHistoryFilterEvents() {
+        const invInput = document.getElementById('history-filter-inverter');
+        const serialInput = document.getElementById('history-filter-serial');
+        const statusInput = document.getElementById('history-filter-status');
+        const searchInput = document.getElementById('history-filter-search');
+        const btnClear = document.getElementById('btn-history-clear-filters');
+
+        if (invInput) invInput.onchange = renderHistory;
+        if (serialInput) serialInput.oninput = renderHistory;
+        if (statusInput) statusInput.onchange = renderHistory;
+        if (searchInput) searchInput.oninput = renderHistory;
+
+        if (btnClear) {
+            btnClear.onclick = () => {
+                if (invInput) invInput.value = '';
+                if (serialInput) serialInput.value = '';
+                if (statusInput) statusInput.value = 'all';
+                if (searchInput) searchInput.value = '';
+                renderHistory();
+            };
+        }
     }
 
     // Modal Helpers & Openers
@@ -1064,23 +1195,60 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('btn-export-csv').onclick = exportHistoryToCSV;
     }
 
-    // Export History Logs to CSV
+    // Export History Logs to CSV (respecting active filters)
     function exportHistoryToCSV() {
+        const invFilter = (document.getElementById('history-filter-inverter')?.value || '').trim();
+        const serialFilter = (document.getElementById('history-filter-serial')?.value || '').trim().toLowerCase();
+        const statusFilter = (document.getElementById('history-filter-status')?.value || 'all').trim().toLowerCase();
+        const searchFilter = (document.getElementById('history-filter-search')?.value || '').trim().toLowerCase();
+
+        const filteredRepairs = logsData.repairs.filter(r => {
+            if (invFilter && (r.inverter_id || '').toUpperCase() !== invFilter.toUpperCase()) return false;
+            if (serialFilter && !(r.serial_number || '').toLowerCase().includes(serialFilter)) return false;
+            if (statusFilter !== 'all' && (r.status || '').toLowerCase() !== statusFilter) return false;
+            if (searchFilter) {
+                const matchReason = (r.reason || '').toLowerCase().includes(searchFilter);
+                const matchDiag = (r.diagnosis || '').toLowerCase().includes(searchFilter);
+                const matchSerial = (r.serial_number || '').toLowerCase().includes(searchFilter);
+                const matchInv = (r.inverter_id || '').toLowerCase().includes(searchFilter);
+                if (!matchReason && !matchDiag && !matchSerial && !matchInv) return false;
+            }
+            return true;
+        });
+
+        const filteredReplacements = logsData.replacements.filter(rep => {
+            if (invFilter && (rep.inverter_id || '').toUpperCase() !== invFilter.toUpperCase()) return false;
+            if (serialFilter) {
+                const matchOld = (rep.old_serial || '').toLowerCase().includes(serialFilter);
+                const matchNew = (rep.new_serial || '').toLowerCase().includes(serialFilter);
+                if (!matchOld && !matchNew) return false;
+            }
+            if (searchFilter) {
+                const matchReason = (rep.reason || '').toLowerCase().includes(searchFilter);
+                const matchTech = (rep.performed_by || '').toLowerCase().includes(searchFilter);
+                const matchOld = (rep.old_serial || '').toLowerCase().includes(searchFilter);
+                const matchNew = (rep.new_serial || '').toLowerCase().includes(searchFilter);
+                const matchInv = (rep.inverter_id || '').toLowerCase().includes(searchFilter);
+                if (!matchReason && !matchTech && !matchOld && !matchNew && !matchInv) return false;
+            }
+            return true;
+        });
+
         let csvContent = "data:text/csv;charset=utf-8,";
         csvContent += "TIPO_REGISTRO,ID,INVERSOR,SLOT,SERIAL,FECHA_INICIO,FECHA_FIN_O_MOTIVO,ESTADO_O_TECNICO\n";
 
-        logsData.repairs.forEach(r => {
+        filteredRepairs.forEach(r => {
             csvContent += `PARADA,${r.id},${r.inverter_id},${r.slot_number},${r.serial_number},"${r.stop_time}","${r.reason}",${r.status}\n`;
         });
 
-        logsData.replacements.forEach(rep => {
+        filteredReplacements.forEach(rep => {
             csvContent += `REEMPLAZO,${rep.id},${rep.inverter_id},${rep.slot_number},"${rep.old_serial}->${rep.new_serial}","${rep.timestamp}","${rep.reason}",${rep.performed_by}\n`;
         });
 
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `historial_mantenimiento_granja_solar_${new Date().toISOString().slice(0,10)}.csv`);
+        link.setAttribute("download", `historial_mantenimiento_filtrado_${new Date().toISOString().slice(0,10)}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

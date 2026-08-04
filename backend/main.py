@@ -3,6 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 import os
@@ -351,10 +352,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         ]
     }
 
-class RestartInverterRequest(BaseModel):
-    inverter_id: str
-    restart_time: datetime
-    diagnosis: Optional[str] = None
+
 
 @app.post("/api/repairs/stop")
 def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db)):
@@ -581,10 +579,64 @@ def add_spare(req: AddSpareModuleRequest, db: Session = Depends(get_db)):
     return {"message": "Módulo de respaldo agregado exitosamente", "serial_number": req.serial_number}
 
 @app.get("/api/logs")
-def get_all_logs(db: Session = Depends(get_db)):
-    """Get audit logs for repairs and replacements."""
-    repairs = db.query(RepairLog).order_by(RepairLog.stop_time.desc()).all()
-    replacements = db.query(ReplacementLog).order_by(ReplacementLog.timestamp.desc()).all()
+def get_all_logs(
+    inverter_id: Optional[str] = Query(None, description="Filtrar por ID de unidad inversora (ej: A1, B2)"),
+    serial_number: Optional[str] = Query(None, description="Filtrar por número serial de módulo"),
+    status: Optional[str] = Query(None, description="Filtrar reparaciones por estado: open, resolved, all"),
+    search: Optional[str] = Query(None, description="Búsqueda por texto libre en motivos, diagnósticos y seriales"),
+    db: Session = Depends(get_db)
+):
+    """Get audit logs for repairs and replacements with filtering support."""
+    repair_query = db.query(RepairLog)
+    replacement_query = db.query(ReplacementLog)
+
+    if inverter_id and isinstance(inverter_id, str):
+        inv_clean = inverter_id.strip().upper()
+        if inv_clean:
+            repair_query = repair_query.filter(RepairLog.inverter_id == inv_clean)
+            replacement_query = replacement_query.filter(ReplacementLog.inverter_id == inv_clean)
+
+    if serial_number and isinstance(serial_number, str):
+        sn_clean = serial_number.strip()
+        if sn_clean:
+            pattern = f"%{sn_clean}%"
+            repair_query = repair_query.filter(RepairLog.serial_number.ilike(pattern))
+            replacement_query = replacement_query.filter(
+                or_(
+                    ReplacementLog.old_serial.ilike(pattern),
+                    ReplacementLog.new_serial.ilike(pattern)
+                )
+            )
+
+    if status and isinstance(status, str) and status.lower() != "all":
+        st_clean = status.strip().lower()
+        if st_clean:
+            repair_query = repair_query.filter(RepairLog.status == st_clean)
+
+    if search and isinstance(search, str):
+        s_clean = search.strip()
+        if s_clean:
+            pattern = f"%{s_clean}%"
+            repair_query = repair_query.filter(
+                or_(
+                    RepairLog.reason.ilike(pattern),
+                    RepairLog.diagnosis.ilike(pattern),
+                    RepairLog.serial_number.ilike(pattern),
+                    RepairLog.inverter_id.ilike(pattern)
+                )
+            )
+            replacement_query = replacement_query.filter(
+                or_(
+                    ReplacementLog.reason.ilike(pattern),
+                    ReplacementLog.performed_by.ilike(pattern),
+                    ReplacementLog.old_serial.ilike(pattern),
+                    ReplacementLog.new_serial.ilike(pattern),
+                    ReplacementLog.inverter_id.ilike(pattern)
+                )
+            )
+
+    repairs = repair_query.order_by(RepairLog.stop_time.desc()).all()
+    replacements = replacement_query.order_by(ReplacementLog.timestamp.desc()).all()
 
     return {
         "repairs": [
@@ -626,11 +678,15 @@ class EditRepairLogRequest(BaseModel):
     restart_time: Optional[datetime] = None
     reason: str
     diagnosis: Optional[str] = None
+    attachment_path: Optional[str] = None
+    attachment_name: Optional[str] = None
 
 class EditReplacementLogRequest(BaseModel):
     timestamp: datetime
     reason: str
     performed_by: Optional[str] = "Técnico Solar"
+    attachment_path: Optional[str] = None
+    attachment_name: Optional[str] = None
 
 @app.get("/api/modules")
 def get_all_modules(db: Session = Depends(get_db)):

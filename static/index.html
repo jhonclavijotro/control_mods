@@ -163,6 +163,9 @@
                         <p id="inv-subtitle">6 Módulos de Potencia Instalados</p>
                     </div>
                     <div class="inv-header-actions">
+                        <button class="btn btn-outline" id="btn-inverter-view-history" title="Ver historial de fallas de esta unidad">
+                            <i class="fa-solid fa-filter"></i> Ver Historial
+                        </button>
                         <button class="btn btn-danger" id="btn-stop-inverter-all" title="Detener todos los módulos de esta unidad inversora">
                             <i class="fa-solid fa-power-off"></i> Parada Total Inversor
                         </button>
@@ -211,6 +214,53 @@
                     <button class="btn btn-outline" id="btn-export-csv">
                         <i class="fa-solid fa-file-csv"></i> Exportar a CSV
                     </button>
+                </div>
+
+                <!-- Interactive Filter Control Panel for History -->
+                <div class="history-filter-panel">
+                    <div class="filter-group">
+                        <label for="history-filter-inverter"><i class="fa-solid fa-bolt"></i> Unidad Inversora</label>
+                        <select id="history-filter-inverter" class="form-control filter-select">
+                            <option value="">Todas las Unidades (A1-E1)</option>
+                            <option value="A1">Unidad A1</option>
+                            <option value="A2">Unidad A2</option>
+                            <option value="B1">Unidad B1</option>
+                            <option value="B2">Unidad B2</option>
+                            <option value="C1">Unidad C1</option>
+                            <option value="C2">Unidad C2</option>
+                            <option value="D1">Unidad D1</option>
+                            <option value="E1">Unidad E1</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="history-filter-serial"><i class="fa-solid fa-microchip"></i> Serial del Módulo</label>
+                        <input type="text" id="history-filter-serial" class="form-control filter-input" placeholder="Ej: PM-A1-M3-7703...">
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="history-filter-status"><i class="fa-solid fa-list-check"></i> Estado Reparación</label>
+                        <select id="history-filter-status" class="form-control filter-select">
+                            <option value="all">Todos los Estados</option>
+                            <option value="open">Abierta (En reparación)</option>
+                            <option value="resolved">Resuelta (Restablecida)</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group filter-search-group">
+                        <label for="history-filter-search"><i class="fa-solid fa-magnifying-glass"></i> Búsqueda Libre</label>
+                        <input type="text" id="history-filter-search" class="form-control filter-input" placeholder="Buscar por motivo, diagnóstico o técnico...">
+                    </div>
+
+                    <div class="filter-group filter-actions-group">
+                        <button id="btn-history-clear-filters" class="btn btn-outline btn-sm" title="Limpiar todos los filtros aplicados">
+                            <i class="fa-solid fa-filter-circle-xmark"></i> Limpiar Filtros
+                        </button>
+                    </div>
+                </div>
+
+                <div class="filter-results-badge-bar" id="history-results-counter">
+                    <span><i class="fa-solid fa-info-circle"></i> Mostrando todos los registros del historial.</span>
                 </div>
 
                 <div class="history-tables-wrapper">
