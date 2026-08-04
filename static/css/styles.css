@@ -767,7 +767,9 @@ body {
 
 .history-filter-panel .filter-actions-group {
     flex: 0 0 auto;
-    justify-content: flex-end;
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
 }
 
 .history-filter-panel label {

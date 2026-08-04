@@ -671,12 +671,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const serialInput = document.getElementById('history-filter-serial');
         const statusInput = document.getElementById('history-filter-status');
         const searchInput = document.getElementById('history-filter-search');
+
+        const btnApply = document.getElementById('btn-history-apply-filters');
         const btnClear = document.getElementById('btn-history-clear-filters');
 
-        if (invInput) invInput.onchange = renderHistory;
-        if (serialInput) serialInput.oninput = renderHistory;
-        if (statusInput) statusInput.onchange = renderHistory;
-        if (searchInput) searchInput.oninput = renderHistory;
+        if (btnApply) {
+            btnApply.onclick = renderHistory;
+        }
+
+        // Also trigger on Enter key inside text input fields
+        [serialInput, searchInput].forEach(inp => {
+            if (inp) {
+                inp.onkeydown = (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        renderHistory();
+                    }
+                };
+            }
+        });
 
         if (btnClear) {
             btnClear.onclick = () => {
