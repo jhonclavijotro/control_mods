@@ -694,6 +694,30 @@ body {
     box-shadow: 0 0 8px var(--primary-glow);
 }
 
+/* High-Contrast White Calendar & Clock Picker Icons in Modals */
+input[type="datetime-local"],
+input[type="date"],
+input[type="time"] {
+    color-scheme: dark;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(100%);
+    cursor: pointer;
+    opacity: 0.9;
+    padding: 0.2rem;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    transform: scale(1.15);
+}
+
 .modal-footer {
     display: flex;
     justify-content: flex-end;
