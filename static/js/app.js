@@ -487,52 +487,40 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('catalog-search-input').oninput = renderModulesCatalog;
 
     // Render History & Reports Tab with Dynamic Filtering
-    function renderHistory() {
+    // Render History & Reports Tab with Backend API Filtering
+    async function renderHistory() {
         const invFilter = (document.getElementById('history-filter-inverter')?.value || '').trim();
-        const serialFilter = (document.getElementById('history-filter-serial')?.value || '').trim().toLowerCase();
-        const statusFilter = (document.getElementById('history-filter-status')?.value || 'all').trim().toLowerCase();
-        const searchFilter = (document.getElementById('history-filter-search')?.value || '').trim().toLowerCase();
+        const serialFilter = (document.getElementById('history-filter-serial')?.value || '').trim();
+        const statusFilter = (document.getElementById('history-filter-status')?.value || 'all').trim();
+        const searchFilter = (document.getElementById('history-filter-search')?.value || '').trim();
 
         const repairsBody = document.getElementById('history-repairs-body');
         const replacementsBody = document.getElementById('history-replacements-body');
         const counterEl = document.getElementById('history-results-counter');
 
-        repairsBody.innerHTML = '';
-        replacementsBody.innerHTML = '';
+        if (!repairsBody || !replacementsBody) return;
 
-        // Filter Repair Logs
-        const filteredRepairs = logsData.repairs.filter(r => {
-            if (invFilter && (r.inverter_id || '').toUpperCase() !== invFilter.toUpperCase()) return false;
-            if (serialFilter && !(r.serial_number || '').toLowerCase().includes(serialFilter)) return false;
-            if (statusFilter !== 'all' && (r.status || '').toLowerCase() !== statusFilter) return false;
-            if (searchFilter) {
-                const matchReason = (r.reason || '').toLowerCase().includes(searchFilter);
-                const matchDiag = (r.diagnosis || '').toLowerCase().includes(searchFilter);
-                const matchSerial = (r.serial_number || '').toLowerCase().includes(searchFilter);
-                const matchInv = (r.inverter_id || '').toLowerCase().includes(searchFilter);
-                if (!matchReason && !matchDiag && !matchSerial && !matchInv) return false;
-            }
-            return true;
-        });
+        // Visual loading indicator
+        repairsBody.innerHTML = `<tr><td colspan="11" style="text-align:center;" class="text-muted"><i class="fa-solid fa-spinner fa-spin"></i> Cargando registros filtrados...</td></tr>`;
+        replacementsBody.innerHTML = `<tr><td colspan="10" style="text-align:center;" class="text-muted"><i class="fa-solid fa-spinner fa-spin"></i> Cargando registros filtrados...</td></tr>`;
 
-        // Filter Replacement Logs
-        const filteredReplacements = logsData.replacements.filter(rep => {
-            if (invFilter && (rep.inverter_id || '').toUpperCase() !== invFilter.toUpperCase()) return false;
-            if (serialFilter) {
-                const matchOld = (rep.old_serial || '').toLowerCase().includes(serialFilter);
-                const matchNew = (rep.new_serial || '').toLowerCase().includes(serialFilter);
-                if (!matchOld && !matchNew) return false;
+        const params = new URLSearchParams();
+        if (invFilter) params.append('inverter_id', invFilter);
+        if (serialFilter) params.append('serial_number', serialFilter);
+        if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
+        if (searchFilter) params.append('search', searchFilter);
+
+        try {
+            const res = await fetch('/api/logs?' + params.toString());
+            if (res.ok) {
+                logsData = await res.json();
             }
-            if (searchFilter) {
-                const matchReason = (rep.reason || '').toLowerCase().includes(searchFilter);
-                const matchTech = (rep.performed_by || '').toLowerCase().includes(searchFilter);
-                const matchOld = (rep.old_serial || '').toLowerCase().includes(searchFilter);
-                const matchNew = (rep.new_serial || '').toLowerCase().includes(searchFilter);
-                const matchInv = (rep.inverter_id || '').toLowerCase().includes(searchFilter);
-                if (!matchReason && !matchTech && !matchOld && !matchNew && !matchInv) return false;
-            }
-            return true;
-        });
+        } catch (err) {
+            console.error('Error obteniendo historial filtrado:', err);
+        }
+
+        const filteredRepairs = logsData.repairs || [];
+        const filteredReplacements = logsData.replacements || [];
 
         // Update Results Counter Badge Bar
         const isFiltered = invFilter || serialFilter || (statusFilter !== 'all') || searchFilter;
@@ -543,18 +531,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (statusFilter !== 'all') activeLabels.push(`Estado: <strong>${statusFilter === 'open' ? 'Abierta' : 'Resuelta'}</strong>`);
             if (searchFilter) activeLabels.push(`Búsqueda: <strong>"${searchFilter}"</strong>`);
 
-            const filterDetails = isFiltered ? `<span style="margin-left:0.5rem; color:var(--primary); font-size:0.8rem;">[${activeLabels.join(' | ')}]</span>` : '';
+            const filterDetails = isFiltered ? `<span style="margin-left:0.5rem; color:var(--secondary); font-size:0.8rem;">[Filtros aplicados: ${activeLabels.join(' | ')}]</span>` : '';
 
             counterEl.innerHTML = `
                 <div>
                     <i class="fa-solid fa-filter"></i> 
-                    Mostrando <span class="badge-count">${filteredRepairs.length} de ${logsData.repairs.length}</span> paradas por reparación 
-                    y <span class="badge-count">${filteredReplacements.length} de ${logsData.replacements.length}</span> reemplazos.${filterDetails}
+                    Mostrando <span class="badge-count">${filteredRepairs.length}</span> paradas por reparación 
+                    y <span class="badge-count">${filteredReplacements.length}</span> reemplazos.${filterDetails}
                 </div>
             `;
         }
 
         // Render Repairs Table Body
+        repairsBody.innerHTML = '';
         if (filteredRepairs.length === 0) {
             repairsBody.innerHTML = `<tr><td colspan="11" style="text-align:center;" class="text-muted">No se encontraron paradas por reparación coincidentes.</td></tr>`;
         } else {
@@ -595,6 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Render Replacements Table Body
+        replacementsBody.innerHTML = '';
         if (filteredReplacements.length === 0) {
             replacementsBody.innerHTML = `<tr><td colspan="10" style="text-align:center;" class="text-muted">No se encontraron reemplazos coincidentes.</td></tr>`;
         } else {
@@ -676,10 +666,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnClear = document.getElementById('btn-history-clear-filters');
 
         if (btnApply) {
-            btnApply.onclick = renderHistory;
+            btnApply.onclick = () => renderHistory();
         }
 
-        // Also trigger on Enter key inside text input fields
+        // Trigger on Enter key inside text input fields
         [serialInput, searchInput].forEach(inp => {
             if (inp) {
                 inp.onkeydown = (e) => {

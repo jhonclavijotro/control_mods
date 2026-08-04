@@ -612,6 +612,8 @@ def get_all_logs(
         st_clean = status.strip().lower()
         if st_clean:
             repair_query = repair_query.filter(RepairLog.status == st_clean)
+            # Replacement logs do not have repair statuses (open/resolved)
+            replacement_query = replacement_query.filter(ReplacementLog.id == -1)
 
     if search and isinstance(search, str):
         s_clean = search.strip()
