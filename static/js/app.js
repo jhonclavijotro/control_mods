@@ -488,11 +488,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Render History & Reports Tab with Dynamic Filtering
     // Render History & Reports Tab with Backend API Filtering
+    // Render History & Reports Tab with Resilient Backend API + In-Memory Fallback Filtering
     async function renderHistory() {
-        const invFilter = (document.getElementById('history-filter-inverter')?.value || '').trim();
-        const serialFilter = (document.getElementById('history-filter-serial')?.value || '').trim();
-        const statusFilter = (document.getElementById('history-filter-status')?.value || 'all').trim();
-        const searchFilter = (document.getElementById('history-filter-search')?.value || '').trim();
+        const invInput = document.getElementById('history-filter-inverter');
+        const serialInput = document.getElementById('history-filter-serial');
+        const statusInput = document.getElementById('history-filter-status');
+        const searchInput = document.getElementById('history-filter-search');
+
+        const invFilter = (invInput?.value || '').trim();
+        const serialFilter = (serialInput?.value || '').trim().toLowerCase();
+        const statusFilter = (statusInput?.value || 'all').trim().toLowerCase();
+        const searchFilter = (searchInput?.value || '').trim().toLowerCase();
 
         const repairsBody = document.getElementById('history-repairs-body');
         const replacementsBody = document.getElementById('history-replacements-body');
@@ -500,10 +506,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!repairsBody || !replacementsBody) return;
 
-        // Visual loading indicator
-        repairsBody.innerHTML = `<tr><td colspan="11" style="text-align:center;" class="text-muted"><i class="fa-solid fa-spinner fa-spin"></i> Cargando registros filtrados...</td></tr>`;
-        replacementsBody.innerHTML = `<tr><td colspan="10" style="text-align:center;" class="text-muted"><i class="fa-solid fa-spinner fa-spin"></i> Cargando registros filtrados...</td></tr>`;
-
+        // Fetch fresh logs from API if available
         const params = new URLSearchParams();
         if (invFilter) params.append('inverter_id', invFilter);
         if (serialFilter) params.append('serial_number', serialFilter);
@@ -513,14 +516,52 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch('/api/logs?' + params.toString());
             if (res.ok) {
-                logsData = await res.json();
+                const freshData = await res.json();
+                if (freshData && freshData.repairs) {
+                    logsData = freshData;
+                }
             }
         } catch (err) {
-            console.error('Error obteniendo historial filtrado:', err);
+            console.warn('API error, falling back to local filtering:', err);
         }
 
-        const filteredRepairs = logsData.repairs || [];
-        const filteredReplacements = logsData.replacements || [];
+        const repairs = logsData.repairs || [];
+        const replacements = logsData.replacements || [];
+
+        // Client-side filtering pass (guarantees accuracy in all environments)
+        const filteredRepairs = repairs.filter(r => {
+            if (invFilter && (r.inverter_id || '').toUpperCase() !== invFilter.toUpperCase()) return false;
+            if (serialFilter && !(r.serial_number || '').toLowerCase().includes(serialFilter)) return false;
+            if (statusFilter !== 'all' && (r.status || '').toLowerCase() !== statusFilter) return false;
+            if (searchFilter) {
+                const matchReason = (r.reason || '').toLowerCase().includes(searchFilter);
+                const matchDiag = (r.diagnosis || '').toLowerCase().includes(searchFilter);
+                const matchSerial = (r.serial_number || '').toLowerCase().includes(searchFilter);
+                const matchInv = (r.inverter_id || '').toLowerCase().includes(searchFilter);
+                const matchId = String(r.id || '').toLowerCase().includes(searchFilter);
+                if (!matchReason && !matchDiag && !matchSerial && !matchInv && !matchId) return false;
+            }
+            return true;
+        });
+
+        const filteredReplacements = (statusFilter !== 'all') ? [] : replacements.filter(rep => {
+            if (invFilter && (rep.inverter_id || '').toUpperCase() !== invFilter.toUpperCase()) return false;
+            if (serialFilter) {
+                const matchOld = (rep.old_serial || '').toLowerCase().includes(serialFilter);
+                const matchNew = (rep.new_serial || '').toLowerCase().includes(serialFilter);
+                if (!matchOld && !matchNew) return false;
+            }
+            if (searchFilter) {
+                const matchReason = (rep.reason || '').toLowerCase().includes(searchFilter);
+                const matchTech = (rep.performed_by || '').toLowerCase().includes(searchFilter);
+                const matchOld = (rep.old_serial || '').toLowerCase().includes(searchFilter);
+                const matchNew = (rep.new_serial || '').toLowerCase().includes(searchFilter);
+                const matchInv = (rep.inverter_id || '').toLowerCase().includes(searchFilter);
+                const matchId = String(rep.id || '').toLowerCase().includes(searchFilter);
+                if (!matchReason && !matchTech && !matchOld && !matchNew && !matchInv && !matchId) return false;
+            }
+            return true;
+        });
 
         // Update Results Counter Badge Bar
         const isFiltered = invFilter || serialFilter || (statusFilter !== 'all') || searchFilter;
@@ -531,7 +572,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (statusFilter !== 'all') activeLabels.push(`Estado: <strong>${statusFilter === 'open' ? 'Abierta' : 'Resuelta'}</strong>`);
             if (searchFilter) activeLabels.push(`Búsqueda: <strong>"${searchFilter}"</strong>`);
 
-            const filterDetails = isFiltered ? `<span style="margin-left:0.5rem; color:var(--secondary); font-size:0.8rem;">[Filtros aplicados: ${activeLabels.join(' | ')}]</span>` : '';
+            const filterDetails = isFiltered ? `<span style="margin-left:0.5rem; color:var(--secondary); font-size:0.8rem;">[Filtros activos: ${activeLabels.join(' | ')}]</span>` : '';
 
             counterEl.innerHTML = `
                 <div>
@@ -665,24 +706,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnApply = document.getElementById('btn-history-apply-filters');
         const btnClear = document.getElementById('btn-history-clear-filters');
 
+        // Bind real-time input & change handlers
+        if (invInput) invInput.onchange = () => renderHistory();
+        if (statusInput) statusInput.onchange = () => renderHistory();
+        if (serialInput) serialInput.oninput = () => renderHistory();
+        if (searchInput) searchInput.oninput = () => renderHistory();
+
+        // Bind explicit Apply button
         if (btnApply) {
-            btnApply.onclick = () => renderHistory();
+            btnApply.onclick = (e) => {
+                if (e) e.preventDefault();
+                renderHistory();
+            };
         }
 
-        // Trigger on Enter key inside text input fields
-        [serialInput, searchInput].forEach(inp => {
-            if (inp) {
-                inp.onkeydown = (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        renderHistory();
-                    }
-                };
-            }
-        });
-
+        // Bind explicit Clear button
         if (btnClear) {
-            btnClear.onclick = () => {
+            btnClear.onclick = (e) => {
+                if (e) e.preventDefault();
                 if (invInput) invInput.value = '';
                 if (serialInput) serialInput.value = '';
                 if (statusInput) statusInput.value = 'all';
