@@ -24,12 +24,52 @@ document.addEventListener('DOMContentLoaded', () => {
     initApp();
 
     function initApp() {
+        initTheme();
         bindTabEvents();
         bindModalEvents();
         bindFormEvents();
         bindActionButtons();
         bindHistoryFilterEvents();
         loadAllData();
+    }
+
+    // Theme Management Logic
+    function initTheme() {
+        const savedTheme = localStorage.getItem('solaris_theme');
+        const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const initialTheme = savedTheme || (systemPrefersDark ? 'dark' : 'dark');
+        
+        applyTheme(initialTheme, false);
+
+        const themeBtn = document.getElementById('btn-theme-toggle');
+        if (themeBtn) {
+            themeBtn.addEventListener('click', () => {
+                const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                applyTheme(newTheme, true);
+            });
+        }
+    }
+
+    function applyTheme(theme, showToastNotification = false) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('solaris_theme', theme);
+
+        const themeIcon = document.getElementById('theme-toggle-icon');
+        const themeText = document.getElementById('theme-toggle-text');
+
+        if (theme === 'light') {
+            if (themeIcon) themeIcon.className = 'fa-solid fa-sun';
+            if (themeText) themeText.textContent = 'Tema Claro';
+        } else {
+            if (themeIcon) themeIcon.className = 'fa-solid fa-moon';
+            if (themeText) themeText.textContent = 'Tema Oscuro';
+        }
+
+        if (showToastNotification) {
+            const label = theme === 'light' ? 'Modo Claro' : 'Modo Oscuro';
+            showToast(`Tema cambiado a ${label}`, 'success');
+        }
     }
 
     // Load data from Backend REST API

@@ -31,10 +31,13 @@
             <div class="solar-schedule-badge">
                 <i class="fa-regular fa-clock"></i> Horario de Operación: <strong>07:00 AM - 06:00 PM (11h/día)</strong>
             </div>
-            <button id="btn-seed-clean" class="btn btn-danger" title="Limpiar base de datos a 0 horas y sin reparaciones para ingresar seriales reales">
+            <button id="btn-theme-toggle" type="button" class="btn btn-outline" title="Cambiar Tema (Claro / Oscuro)">
+                <i class="fa-solid fa-moon" id="theme-toggle-icon"></i> <span id="theme-toggle-text">Tema Oscuro</span>
+            </button>
+            <button id="btn-seed-clean" type="button" class="btn btn-danger" title="Limpiar base de datos a 0 horas y sin reparaciones para ingresar seriales reales">
                 <i class="fa-solid fa-broom"></i> Limpiar a Cero
             </button>
-            <button id="btn-seed-reset" class="btn btn-outline" title="Reiniciar datos iniciales de demostración">
+            <button id="btn-seed-reset" type="button" class="btn btn-outline" title="Reiniciar datos iniciales de demostración">
                 <i class="fa-solid fa-rotate"></i> Datos Demo
             </button>
         </div>
@@ -689,6 +692,6 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- JS Code -->
-    <script src="/static/js/app.js?v=1.3"></script>
+    <script src="/static/js/app.js?v=1.5"></script>
 </body>
 </html>
