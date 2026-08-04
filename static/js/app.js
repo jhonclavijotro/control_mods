@@ -706,31 +706,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnApply = document.getElementById('btn-history-apply-filters');
         const btnClear = document.getElementById('btn-history-clear-filters');
 
-        // Bind real-time input & change handlers
-        if (invInput) invInput.onchange = () => renderHistory();
-        if (statusInput) statusInput.onchange = () => renderHistory();
-        if (serialInput) serialInput.oninput = () => renderHistory();
-        if (searchInput) searchInput.oninput = () => renderHistory();
-
-        // Bind explicit Apply button
+        // Bind explicit Apply button with notification
         if (btnApply) {
-            btnApply.onclick = (e) => {
+            btnApply.onclick = async (e) => {
                 if (e) e.preventDefault();
-                renderHistory();
+                await renderHistory();
+                showToast('Filtros aplicados correctamente');
             };
         }
 
-        // Bind explicit Clear button
+        // Bind explicit Clear button with notification
         if (btnClear) {
-            btnClear.onclick = (e) => {
+            btnClear.onclick = async (e) => {
                 if (e) e.preventDefault();
                 if (invInput) invInput.value = '';
                 if (serialInput) serialInput.value = '';
                 if (statusInput) statusInput.value = 'all';
                 if (searchInput) searchInput.value = '';
-                renderHistory();
+                await renderHistory();
+                showToast('Filtros limpiados. Mostrando todo el historial');
             };
         }
+
+        // Enter key inside text input fields
+        [serialInput, searchInput].forEach(inp => {
+            if (inp) {
+                inp.onkeydown = async (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        await renderHistory();
+                        showToast('Filtros aplicados correctamente');
+                    }
+                };
+            }
+        });
     }
 
     // Modal Helpers & Openers
