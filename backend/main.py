@@ -434,6 +434,9 @@ def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db)):
 @app.post("/api/repairs/restart-inverter")
 def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_db)):
     """Restart all open repairs for a given inverter unit."""
+    if not req.diagnosis or not req.diagnosis.strip():
+        raise HTTPException(status_code=400, detail="Es obligatorio proporcionar un diagnóstico final o solución aplicada para reiniciar las paradas del inversor.")
+
     inv_id = req.inverter_id.upper()
     open_repairs = db.query(RepairLog).filter(
         RepairLog.inverter_id == inv_id,
@@ -448,8 +451,7 @@ def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_
             raise HTTPException(status_code=400, detail="La fecha de arranque no puede ser anterior a la fecha de parada")
         r.restart_time = req.restart_time
         r.status = "resolved"
-        if req.diagnosis:
-            r.diagnosis = f"[ARRANQUE GENERAL] {req.diagnosis}"
+        r.diagnosis = f"[ARRANQUE GENERAL] {req.diagnosis.strip()}"
         
         if req.attachment_path:
             r.attachment_path = req.attachment_path
@@ -465,6 +467,9 @@ def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_
 @app.post("/api/repairs/restart")
 def register_repair_restart(req: RestartRepairRequest, db: Session = Depends(get_db)):
     """Register restart of a module that was under repair."""
+    if not req.diagnosis or not req.diagnosis.strip():
+        raise HTTPException(status_code=400, detail="Es obligatorio proporcionar un diagnóstico final o solución aplicada para registrar el arranque.")
+
     repair = db.query(RepairLog).filter(RepairLog.id == req.repair_id).first()
     if not repair:
         raise HTTPException(status_code=404, detail="Registro de reparación no encontrado")
@@ -474,8 +479,7 @@ def register_repair_restart(req: RestartRepairRequest, db: Session = Depends(get
 
     repair.restart_time = req.restart_time
     repair.status = "resolved"
-    if req.diagnosis:
-        repair.diagnosis = req.diagnosis
+    repair.diagnosis = req.diagnosis.strip()
 
     if req.attachment_path:
         repair.attachment_path = req.attachment_path
@@ -800,11 +804,15 @@ def edit_repair_log(repair_id: int, req: EditRepairLogRequest, db: Session = Dep
     if req.restart_time and req.restart_time < req.stop_time:
         raise HTTPException(status_code=400, detail="La fecha de arranque no puede ser anterior a la fecha de parada.")
 
+    final_diag = req.diagnosis.strip() if req.diagnosis else (repair.diagnosis or "")
+    if req.restart_time and not final_diag.strip():
+        raise HTTPException(status_code=400, detail="No se puede registrar la fecha de arranque o resolver la parada sin proporcionar un diagnóstico final o solución aplicada.")
+
     repair.stop_time = req.stop_time
     repair.restart_time = req.restart_time
     repair.reason = req.reason
     if req.diagnosis is not None:
-        repair.diagnosis = req.diagnosis
+        repair.diagnosis = req.diagnosis.strip()
 
     if req.attachment_path:
         repair.attachment_path = req.attachment_path

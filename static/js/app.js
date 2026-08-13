@@ -994,7 +994,12 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const repairId = parseInt(document.getElementById('restart-repair-id').value);
             const restartTime = document.getElementById('restart-time').value;
-            const diagnosis = document.getElementById('restart-diagnosis').value;
+            const diagnosis = document.getElementById('restart-diagnosis').value.trim();
+
+            if (!diagnosis) {
+                showToast('Es obligatorio ingresar un diagnóstico final o solución aplicada antes de reiniciar.', 'error');
+                return;
+            }
 
             try {
                 const uploadRes = await uploadFileIfSelected('restart-file-input');
@@ -1142,8 +1147,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const repairId = parseInt(document.getElementById('edit-repair-id-input').value);
             const stopTime = document.getElementById('edit-repair-stop-time').value;
             const restartTime = document.getElementById('edit-repair-restart-time').value || null;
-            const reason = document.getElementById('edit-repair-reason').value;
-            const diagnosis = document.getElementById('edit-repair-diagnosis').value;
+            const reason = document.getElementById('edit-repair-reason').value.trim();
+            const diagnosis = document.getElementById('edit-repair-diagnosis').value.trim();
+
+            if (restartTime && !diagnosis) {
+                showToast('No se puede registrar fecha de arranque sin especificar un diagnóstico final o solución aplicada.', 'error');
+                return;
+            }
 
             try {
                 const uploadRes = await uploadFileIfSelected('edit-repair-file-input');
