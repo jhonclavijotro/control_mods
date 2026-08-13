@@ -308,19 +308,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <div class="card-actions">
                     ${isRepair ? `
-                        <button class="btn btn-success btn-sm btn-restart-action" data-repair-id="${slot.active_repair ? slot.active_repair.repair_id : ''}" data-serial="${slot.current_serial}">
-                            <i class="fa-solid fa-play"></i> Registrar Arranque
+                        <button type="button" class="btn btn-success btn-icon-only btn-restart-action" data-repair-id="${slot.active_repair ? slot.active_repair.repair_id : ''}" data-serial="${slot.current_serial}" title="Registrar Arranque">
+                            <i class="fa-solid fa-play"></i>
                         </button>
                     ` : `
-                        <button class="btn btn-danger btn-sm btn-stop-action" data-inv="${inv.id}" data-slot="${slot.slot_number}">
-                            <i class="fa-solid fa-pause"></i> Registrar Parada
+                        <button type="button" class="btn btn-danger btn-icon-only btn-stop-action" data-inv="${inv.id}" data-slot="${slot.slot_number}" title="Registrar Parada">
+                            <i class="fa-solid fa-pause"></i>
                         </button>
                     `}
-                    <button class="btn btn-secondary btn-sm btn-replace-action" data-inv="${inv.id}" data-slot="${slot.slot_number}" data-serial="${slot.current_serial}">
-                        <i class="fa-solid fa-arrows-rotate"></i> Reemplazar
+                    <button type="button" class="btn btn-secondary btn-icon-only btn-replace-action" data-inv="${inv.id}" data-slot="${slot.slot_number}" data-serial="${slot.current_serial}" title="Reemplazar Módulo">
+                        <i class="fa-solid fa-arrows-rotate"></i>
                     </button>
-                    <button class="btn btn-outline btn-sm btn-module-history-action" data-serial="${slot.current_serial}" title="Ver historial de fallas de este módulo">
-                        <i class="fa-solid fa-clock-rotate-left"></i> Historial
+                    <button type="button" class="btn btn-outline btn-icon-only btn-module-history-action" data-serial="${slot.current_serial}" title="Ver Historial de Fallas">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
                     </button>
                 </div>
             `;
