@@ -49,25 +49,17 @@
         <!-- Navigation Tabs Bar -->
         <nav class="tabs-nav-wrapper">
             <div class="tabs-scroll" id="tabs-bar">
-                <button class="tab-btn active" data-tab="dashboard">
+                <button type="button" class="tab-btn active" data-tab="dashboard">
                     <i class="fa-solid fa-chart-pie"></i> Dashboard
                 </button>
-                <button class="tab-btn" data-tab="A1">⚡ A1 <span class="mod-badge">6 Mód.</span></button>
-                <button class="tab-btn" data-tab="A2">⚡ A2 <span class="mod-badge">6 Mód.</span></button>
-                <button class="tab-btn" data-tab="B1">⚡ B1 <span class="mod-badge">6 Mód.</span></button>
-                <button class="tab-btn" data-tab="B2">⚡ B2 <span class="mod-badge">6 Mód.</span></button>
-                <button class="tab-btn" data-tab="C1">⚡ C1 <span class="mod-badge">6 Mód.</span></button>
-                <button class="tab-btn" data-tab="C2">⚡ C2 <span class="mod-badge">6 Mód.</span></button>
-                <button class="tab-btn" data-tab="D1">⚡ D1 <span class="mod-badge">6 Mód.</span></button>
-                <button class="tab-btn" data-tab="E1">⚡ E1 <span class="mod-badge">4 Mód.</span></button>
-                <button class="tab-btn" data-tab="spares">
+                <button type="button" class="tab-btn" data-tab="spares">
                     <i class="fa-solid fa-boxes-stacked"></i> Respaldo
                 </button>
-                <button class="tab-btn" data-tab="history">
+                <button type="button" class="tab-btn" data-tab="history">
                     <i class="fa-solid fa-list-check"></i> Historial
                 </button>
-                <button class="tab-btn" data-tab="modules">
-                    <i class="fa-solid fa-microchip"></i> Catálogo Módulos
+                <button type="button" class="tab-btn" data-tab="modules">
+                    <i class="fa-solid fa-microchip"></i> Catálogo
                 </button>
             </div>
         </nav>
@@ -162,7 +154,12 @@
             <div class="tab-pane" id="tab-inverter">
                 <div class="pane-header flex-between">
                     <div>
-                        <h2 id="inv-title">⚡ Unidad Inversora A1</h2>
+                        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem;">
+                            <button type="button" class="btn btn-outline btn-sm" id="btn-back-to-dashboard" title="Volver al Dashboard principal">
+                                <i class="fa-solid fa-arrow-left"></i> Volver al Dashboard
+                            </button>
+                            <h2 id="inv-title" style="margin: 0;">⚡ Unidad Inversora A1</h2>
+                        </div>
                         <p id="inv-subtitle">6 Módulos de Potencia Instalados</p>
                     </div>
                     <div class="inv-header-actions">
@@ -692,6 +689,6 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- JS Code -->
-    <script src="/static/js/app.js?v=1.7"></script>
+    <script src="/static/js/app.js?v=1.8"></script>
 </body>
 </html>

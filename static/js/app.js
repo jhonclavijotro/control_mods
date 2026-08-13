@@ -105,33 +105,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetTab = btn.dataset.tab;
             switchTab(targetTab);
         });
-    }
 
-    function switchTab(tabId) {
-        currentTab = tabId;
-
-        // Update active tab button
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.tab === tabId);
-        });
-
-        // Hide all panes
-        tabPanes.forEach(pane => pane.classList.remove('active'));
-
-        // Handle Pane Switching
-        if (tabId === 'dashboard') {
-            document.getElementById('tab-dashboard').classList.add('active');
-            renderDashboard();
-        } else if (tabId === 'spares') {
-            document.getElementById('tab-spares').classList.add('active');
-            renderSpares();
-        } else if (tabId === 'history') {
-            document.getElementById('tab-history').classList.add('active');
-            renderHistory();
-        } else {
-            // Individual Inverter Tab (A1, A2, B1, B2, C1, C2, D1, E1)
-            document.getElementById('tab-inverter').classList.add('active');
-            renderInverterPane(tabId);
+        const btnBackDash = document.getElementById('btn-back-to-dashboard');
+        if (btnBackDash) {
+            btnBackDash.onclick = () => switchTab('dashboard');
         }
     }
 
