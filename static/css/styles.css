@@ -137,6 +137,28 @@ body {
     z-index: 90;
 }
 
+/* Read-Only Mode Styling for Stakeholders */
+.read-only-banner {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(217, 119, 6, 0.28) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    color: #fef08a;
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--radius-md);
+    font-size: 0.88rem;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
+}
+
+body.is-read-only .btn-read-only-disabled {
+    opacity: 0.45 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+    filter: grayscale(0.5);
+}
+
 .tabs-scroll {
     display: flex;
     gap: 0.4rem;

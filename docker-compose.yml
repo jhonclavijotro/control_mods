@@ -1,4 +1,5 @@
 services:
+  # Instancia Principal (Administrador / Operaciones completas)
   solar-control-app:
     build:
       context: .
@@ -7,13 +8,48 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Montaje de volumen persistente para la base de datos SQLite
       - ./data:/app/data
     environment:
       - DATA_DIR=/app/data
+      - READ_ONLY_MODE=false
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/dashboard"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Instancia Restringida para Stakeholders (Modo Solo Lectura)
+  solar-control-stakeholder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: solar_farm_stakeholder
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATA_DIR=/app/data
+      - READ_ONLY_MODE=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/dashboard"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Contenedor ngrok para Túnel Web Seguro hacia la Instancia Stakeholders
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: solar_farm_ngrok
+    restart: unless-stopped
+    command:
+      - "http"
+      - "solar-control-stakeholder:8000"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"
+    depends_on:
+      - solar-control-stakeholder

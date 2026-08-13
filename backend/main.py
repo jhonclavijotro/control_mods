@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,11 +24,25 @@ DATA_DIR = os.path.dirname(os.path.abspath(engine.url.database)) if engine.url.d
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Read-Only Environment Configuration
+READ_ONLY_MODE = os.getenv("READ_ONLY_MODE", "false").lower() in ["true", "1", "yes"]
+
 app = FastAPI(
     title="Control de Módulos de Potencia - Granja Solar",
     description="API REST para seguimiento, mantenimiento y métricas de unidades de inversión y módulos de potencia.",
-    version="1.1.0"
+    version="1.2.0"
 )
+
+# Read-Only Middleware for Stakeholder Restricted Mode
+@app.middleware("http")
+async def read_only_middleware(request: Request, call_next):
+    if READ_ONLY_MODE and request.method in ["POST", "PUT", "DELETE", "PATCH"]:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Modo de solo lectura activado (Stakeholders). Las operaciones de modificación están restringidas en este entorno."}
+        )
+    response = await call_next(request)
+    return response
 
 # Enable CORS for local development
 app.add_middleware(
@@ -40,6 +54,14 @@ app.add_middleware(
 )
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+@app.get("/api/config")
+def get_app_config():
+    """Returns runtime app configuration including read-only status."""
+    return {
+        "read_only_mode": READ_ONLY_MODE,
+        "app_name": "Gestión de Módulos de Potencia - Granja Solar"
+    }
 
 @app.post("/api/upload")
 async def upload_attachment(file: UploadFile = File(...)):
@@ -321,6 +343,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     recent_replacements = db.query(ReplacementLog).order_by(ReplacementLog.timestamp.desc()).limit(5).all()
 
     return {
+        "read_only_mode": READ_ONLY_MODE,
         "total_active_slots": total_slots,
         "operating_count": operating_count,
         "in_repair_count": in_repair_count,

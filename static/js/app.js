@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let dashboardData = {};
     let sparesData = [];
     let logsData = { repairs: [], replacements: [] };
+    let isReadOnly = false;
 
     // DOM Elements
     const tabsBar = document.getElementById('tabs-bar');
@@ -23,14 +24,39 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize App
     initApp();
 
-    function initApp() {
+    async function initApp() {
         initTheme();
         bindTabEvents();
         bindModalEvents();
         bindFormEvents();
         bindActionButtons();
         bindHistoryFilterEvents();
-        loadAllData();
+        await checkAppConfig();
+        await loadAllData();
+    }
+
+    async function checkAppConfig() {
+        try {
+            const cfg = await fetch('/api/config').then(r => r.json());
+            isReadOnly = !!cfg.read_only_mode;
+            if (isReadOnly) {
+                document.body.classList.add('is-read-only');
+                const banner = document.getElementById('read-only-banner');
+                if (banner) banner.style.display = 'flex';
+
+                // Disable header mutating buttons
+                ['btn-quick-stop', 'btn-quick-replace', 'btn-add-spare', 'btn-seed-reset', 'btn-seed-clean'].forEach(id => {
+                    const btn = document.getElementById(id);
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.classList.add('btn-read-only-disabled');
+                        btn.title = "Operación no disponible en Modo Solo Lectura (Stakeholders)";
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('Error al verificar la configuración:', e);
+        }
     }
 
     // Theme Management Logic
@@ -346,6 +372,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 openRestartInverterModal(inv.id);
             };
         }
+
+        // Apply read-only mode state to card action buttons
+        if (isReadOnly) {
+            slotsContainer.querySelectorAll('.btn-stop-action, .btn-restart-action, .btn-replace-action').forEach(b => {
+                b.disabled = true;
+                b.classList.add('btn-read-only-disabled');
+                b.title = "Acción no permitida en Modo Solo Lectura (Stakeholders)";
+            });
+            if (btnStopAll) {
+                btnStopAll.disabled = true;
+                btnStopAll.classList.add('btn-read-only-disabled');
+                btnStopAll.title = "Acción no permitida en Modo Solo Lectura";
+            }
+            if (btnRestartAll) {
+                btnRestartAll.disabled = true;
+                btnRestartAll.classList.add('btn-read-only-disabled');
+                btnRestartAll.title = "Acción no permitida en Modo Solo Lectura";
+            }
+        }
     }
 
     // Render Spares Inventory Tab
@@ -384,6 +429,14 @@ document.addEventListener('DOMContentLoaded', () => {
         container.querySelectorAll('.btn-delete-spare-action').forEach(b => {
             b.onclick = () => deleteModuleFromInventory(b.dataset.serial);
         });
+
+        if (isReadOnly) {
+            container.querySelectorAll('.btn-delete-spare-action').forEach(b => {
+                b.disabled = true;
+                b.classList.add('btn-read-only-disabled');
+                b.title = "Acción no permitida en Modo Solo Lectura (Stakeholders)";
+            });
+        }
     }
 
     async function deleteModuleFromInventory(serialNumber) {
@@ -496,6 +549,14 @@ document.addEventListener('DOMContentLoaded', () => {
             body.querySelectorAll('.btn-delete-module-action').forEach(b => {
                 b.onclick = () => deleteModuleFromInventory(b.dataset.serial);
             });
+
+            if (isReadOnly) {
+                body.querySelectorAll('.btn-edit-serial-action, .btn-delete-module-action').forEach(b => {
+                    b.disabled = true;
+                    b.classList.add('btn-read-only-disabled');
+                    b.title = "Acción no permitida en Modo Solo Lectura (Stakeholders)";
+                });
+            }
         } catch (err) {
             body.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--danger);">Error cargando módulos.</td></tr>`;
         }
