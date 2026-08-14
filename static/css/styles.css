@@ -1118,3 +1118,21 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
 }
 
+[data-theme="light"] .read-only-banner {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 1px solid #f59e0b;
+    color: #78350f;
+    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.12);
+}
+
+[data-theme="light"] .read-only-banner strong {
+    color: #451a03;
+}
+
+[data-theme="light"] .active-repair-banner {
+    background: #fef2f2;
+    border: 1px dashed #fca5a5;
+    color: #991b1b;
+}
+
+

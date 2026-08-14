@@ -47,6 +47,7 @@ services:
     command:
       - "http"
       - "solar-control-stakeholder:8000"
+      - "--url=${NGROK_DOMAIN:-chiquita-unstructural-maura.ngrok-free.dev}"
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
     ports:

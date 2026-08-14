@@ -37,6 +37,9 @@ Obtiene las métricas consolidadas de la granja solar, KPIs globales, estados de
 #### `GET /api/inverters`
 Retorna el listado completo de unidades inversoras (`A1`..`E1`), ranuras asociadas y métricas por módulo.
 
+#### `GET /api/modules`
+Retorna el inventario consolidado de todos los módulos de potencia. Incluye estado, ranura asignada, fecha de instalación (`installed_at`), registro histórico (`registered_at`) y objeto completo de métricas solares (`metrics`).
+
 #### `GET /api/spares`
 Lista los módulos de respaldo disponibles en el inventario de repuestos.
 
@@ -46,6 +49,15 @@ Registra un nuevo módulo de potencia en el inventario de repuestos.
   ```json
   {
     "serial_number": "MOD-SP-2026-X99"
+  }
+  ```
+
+#### `PUT /api/slots/{inverter_id}/{slot_number}/installed-at`
+Configura y actualiza la fecha y hora de instalación (`installed_at`) de una ranura o módulo específico. Sincroniza la fecha en el slot y en el módulo de potencia asignado, e inicia de inmediato el recálculo dinámico de las horas útiles solares (7am-6pm) y disponibilidad %.
+- **Cuerpo JSON**:
+  ```json
+  {
+    "installed_at": "2026-08-10T08:00:00"
   }
   ```
 

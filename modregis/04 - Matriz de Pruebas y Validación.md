@@ -71,6 +71,31 @@ Esta matriz documenta los escenarios de prueba críticos para garantizar la esta
 
 ---
 
+### Caso 5: Corrección de Línea Base de Disponibilidad (Cálculo de Uptime en Paradas Solares)
+
+- **Objetivo**: Verificar que la disponibilidad (`uptime_percent`) no colapse a 0.0% cuando se registra una falla en el mismo día de la instalación o inicialización del sistema.
+- **Paso a Paso**:
+  1. Registrar una parada de 2.7 horas (ej: de 07:35 AM a 10:18 AM) para los inversores A1 y B2.
+- **Resultado Esperado**:
+  - El motor `solar_engine.py` establece una línea base operativa de al menos 30 días (~330 horas solares).
+  - La disponibilidad calculada para los inversores afectados debe ser realista (~99.2%) y no 0.0%.
+
+---
+
+### Caso 6: Recálculo Dinámico de Horas de Operación según Fecha de Instalación (`installed_at`) y Visibilidad en Catálogo
+
+- **Objetivo**: Verificar que modificar la fecha de instalación (`installed_at`) recalcule de forma inmediata y proporcional las horas útiles de operación solar (7am-6pm) y se refleje correctamente en la tabla del catálogo y en la ventana modal de edición sin desfasamiento de zona horaria.
+- **Paso a Paso**:
+  1. Ejecutar la petición `PUT /api/slots/A1/1/installed-at` enviando `installed_at: "<FECHA_HACE_2_DIAS>T07:00:00"`.
+  2. Consultar `GET /api/inverters` y `GET /api/modules`.
+  3. Navegar a la pestaña **Catálogo e Inventario General de Módulos** y abrir la ventana modal del botón `<i class="fa-regular fa-calendar-days">` Fecha Inst.
+- **Resultado Esperado**:
+  - `net_operating_hours` reporta exactamente **22.0 hrs** (2 días de radiación solar activa entre 7am y 6pm).
+  - La columna **Fecha de Instalación** en la tabla del catálogo muestra la fecha ingresada formateada (`DD/MM/YYYY, HH:mm`).
+  - La ventana modal de edición precarga en el campo `<input type="datetime-local">` la fecha previamente ingresada sin distorsión por conversión UTC.
+
+---
+
 ## 🔗 Notas Relacionadas
 - [[01 - Guía de Instalación y Despliegue]]
 - [[02 - Manual de Usuario y Operaciones]]

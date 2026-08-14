@@ -11,9 +11,17 @@ import shutil
 import uuid
 from typing import Optional, List
 
-from .database import engine, Base, get_db, SessionLocal, auto_migrate_db_schema
-from .models import Inverter, ModuleSlot, PowerModule, RepairLog, ReplacementLog
-from .solar_engine import calculate_module_metrics
+try:
+    from .database import engine, Base, get_db, SessionLocal, auto_migrate_db_schema
+    from .models import Inverter, ModuleSlot, PowerModule, RepairLog, ReplacementLog
+    from .solar_engine import calculate_module_metrics
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).resolve().parent))
+    from database import engine, Base, get_db, SessionLocal, auto_migrate_db_schema
+    from models import Inverter, ModuleSlot, PowerModule, RepairLog, ReplacementLog
+    from solar_engine import calculate_module_metrics
 
 # Create Database tables and auto-migrate schema
 Base.metadata.create_all(bind=engine)
@@ -120,6 +128,79 @@ class ModuleReplacementRequest(BaseModel):
 class AddSpareModuleRequest(BaseModel):
     serial_number: str
 
+REAL_AND_SYNTHETIC_SERIALS = {
+    ("A1", 1): "30778700",
+    ("A1", 2): "30778690",
+    ("A1", 3): "30778681",
+    ("A1", 4): "30778693",
+    ("A1", 5): "30778687",
+    ("A1", 6): "30778692",
+    ("A2", 1): "30778672",
+    ("A2", 2): "30778697",
+    ("A2", 3): "30778661",
+    ("A2", 4): "30778670",
+    ("A2", 5): "30778673",
+    ("A2", 6): "30773509",
+    ("B1", 1): "30763827",
+    ("B1", 2): "30773512",
+    ("B1", 3): "30777967",
+    ("B1", 4): "30777951",
+    ("B1", 5): "30777962",
+    ("B1", 6): "30778688",
+    ("B2", 1): "30777965",
+    ("B2", 2): "30778677",
+    ("B2", 3): "30778676",
+    ("B2", 4): "30778680",
+    ("B2", 5): "30773498",
+    ("B2", 6): "30778679",
+    ("C1", 1): "30777977",
+    ("C1", 2): "30778686",
+    ("C1", 3): "30302105",
+    ("C1", 4): "30778689",
+    ("C1", 5): "SYNTH-C1-M5",
+    ("C1", 6): "30778699",
+    ("C2", 1): "30777955",
+    ("C2", 2): "30778703",
+    ("C2", 3): "30773510",
+    ("C2", 4): "30777972",
+    ("C2", 5): "30777976",
+    ("C2", 6): "30778682",
+    ("D1", 1): "30778678",
+    ("D1", 2): "SYNTH-D1-M2",
+    ("D1", 3): "SYNTH-D1-M3",
+    ("D1", 4): "SYNTH-D1-M4",
+    ("D1", 5): "30778684",
+    ("D1", 6): "30778683",
+    ("E1", 1): "30778685",
+    ("E1", 2): "30778701",
+    ("E1", 3): "30778691",
+    ("E1", 4): "30777969",
+}
+
+def load_initial_serials():
+    serials_map = dict(REAL_AND_SYNTHETIC_SERIALS)
+    excel_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "BASE", "SERIALES.xlsx")
+    if os.path.exists(excel_path):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(excel_path)
+            ws = wb.active
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if row and len(row) >= 3 and row[0] and row[1]:
+                    inv = str(row[0]).strip().upper()
+                    try:
+                        slot = int(row[1])
+                    except (ValueError, TypeError):
+                        continue
+                    raw_serial = row[2]
+                    if raw_serial is not None and str(raw_serial).strip():
+                        serials_map[(inv, slot)] = str(raw_serial).strip()
+                    else:
+                        serials_map[(inv, slot)] = f"SYNTH-{inv}-M{slot}"
+        except Exception as e:
+            print(f"Aviso al cargar Excel de seriales: {e}")
+    return serials_map
+
 # Seed initial farm data if empty
 def seed_database_if_needed(db: Session):
     inverter_count = db.query(Inverter).count()
@@ -137,14 +218,15 @@ def seed_database_if_needed(db: Session):
         ("E1", "Unidad Inversora E1", 4),
     ]
 
-    base_time = datetime.utcnow() - timedelta(days=60)
+    base_time = datetime.utcnow() - timedelta(days=30)
+    serials_map = load_initial_serials()
 
     for inv_id, inv_name, max_mods in inverter_configs:
         inverter = Inverter(id=inv_id, name=inv_name, max_modules=max_mods)
         db.add(inverter)
 
         for slot_idx in range(1, max_mods + 1):
-            serial = f"PM-{inv_id}-M{slot_idx}-770{slot_idx}"
+            serial = serials_map.get((inv_id, slot_idx), f"SYNTH-{inv_id}-M{slot_idx}")
             
             # Create Module Slot
             slot = ModuleSlot(
@@ -178,38 +260,6 @@ def seed_database_if_needed(db: Session):
             total_repairs=0
         )
         db.add(sp_pm)
-
-    # Seed a couple of historical sample repairs and replacements for demo
-    sample_repair = RepairLog(
-        serial_number="PM-A1-M3-7703",
-        inverter_id="A1",
-        slot_number=3,
-        stop_time=datetime.utcnow() - timedelta(days=10, hours=14),
-        restart_time=datetime.utcnow() - timedelta(days=9, hours=8),
-        reason="Sobretemperatura en etapa de potencia",
-        diagnosis="Limpieza de disipador térmico y reemplazo de pasta conductiva",
-        status="resolved"
-    )
-    db.add(sample_repair)
-
-    # Seed one currently open repair on B2 slot 2
-    db.flush()
-    b2_slot2_pm = db.query(PowerModule).filter(PowerModule.serial_number == "PM-B2-M2-7702").first()
-    if b2_slot2_pm:
-        b2_slot2_pm.status = "in_repair"
-        b2_slot2_pm.total_repairs = 1
-    
-    open_repair = RepairLog(
-        serial_number="PM-B2-M2-7702",
-        inverter_id="B2",
-        slot_number=2,
-        stop_time=datetime.utcnow() - timedelta(days=1, hours=5),
-        restart_time=None,
-        reason="Falla en la tarjeta de control de disparo IGBT",
-        diagnosis="Diagnóstico en taller técnico pendiente de repuestos",
-        status="open"
-    )
-    db.add(open_repair)
 
     db.commit()
 
@@ -702,6 +752,9 @@ def get_all_logs(
 class EditSerialRequest(BaseModel):
     new_serial: str
 
+class EditSlotInstallationDateRequest(BaseModel):
+    installed_at: datetime
+
 class EditRepairLogRequest(BaseModel):
     stop_time: datetime
     restart_time: Optional[datetime] = None
@@ -742,6 +795,7 @@ def get_all_modules(db: Session = Depends(get_db)):
             "slot_number": pm.current_slot_number,
             "status": effective_status,
             "registered_at": pm.registered_at.isoformat() if pm.registered_at else None,
+            "installed_at": installed_at.isoformat() if installed_at else None,
             "total_repairs": pm.total_repairs,
             "metrics": metrics
         })
@@ -816,6 +870,35 @@ def delete_module(serial_number: str, db: Session = Depends(get_db)):
     db.delete(pm)
     db.commit()
     return {"message": f"Módulo '{serial_number}' eliminado exitosamente del inventario."}
+
+@app.put("/api/slots/{inverter_id}/{slot_number}/installed-at")
+def edit_slot_installation_date(
+    inverter_id: str,
+    slot_number: int,
+    req: EditSlotInstallationDateRequest,
+    db: Session = Depends(get_db)
+):
+    """Edit the installation date and time (installed_at) for a specific module slot."""
+    slot = db.query(ModuleSlot).filter(
+        ModuleSlot.inverter_id == inverter_id.upper(),
+        ModuleSlot.slot_number == slot_number
+    ).first()
+
+    if not slot:
+        raise HTTPException(status_code=404, detail=f"Slot {slot_number} de la unidad {inverter_id.upper()} no encontrado.")
+
+    slot.installed_at = req.installed_at
+    
+    if slot.current_serial:
+        pm = db.query(PowerModule).filter(PowerModule.serial_number == slot.current_serial).first()
+        if pm:
+            pm.registered_at = req.installed_at
+
+    db.commit()
+    return {
+        "message": f"Fecha y hora de instalación actualizada exitosamente para {inverter_id.upper()} slot {slot_number}.",
+        "installed_at": slot.installed_at.isoformat()
+    }
 
 @app.put("/api/repairs/{repair_id}")
 def edit_repair_log(repair_id: int, req: EditRepairLogRequest, db: Session = Depends(get_db)):
@@ -922,3 +1005,8 @@ def read_root():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return JSONResponse({"message": "API de Granja Solar lista. Visite /docs para la documentación REST API."})
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("backend.main:app" if __package__ else "main:app", host="0.0.0.0", port=8000, reload=True)
+

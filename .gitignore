@@ -12,7 +12,8 @@ data/*.db
 data/*.sqlite
 data/*.sqlite3
 
-# IDE and OS
+# IDE, Environment and OS
+.env
 .vscode/
 .idea/
 .obsidian/

@@ -291,6 +291,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${activeRepairHtml}
 
                 <div class="metrics-box">
+                    <div class="metric-item" style="grid-column: span 2; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.3rem; margin-bottom: 0.2rem;">
+                        <span class="m-label"><i class="fa-regular fa-calendar-days"></i> Fecha de Instalación</span>
+                        <span class="m-val" style="font-size: 0.88rem; color: var(--secondary);">${formatDate(slot.installed_at || (m && m.installed_at))}</span>
+                    </div>
                     <div class="metric-item">
                         <span class="m-label">Horas Operación (7am-6pm)</span>
                         <span class="m-val">${m.net_operating_hours} hrs</span>
@@ -322,6 +326,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button type="button" class="btn btn-secondary btn-icon-only btn-replace-action" data-inv="${inv.id}" data-slot="${slot.slot_number}" data-serial="${slot.current_serial}" title="Reemplazar Módulo">
                         <i class="fa-solid fa-arrows-rotate"></i>
                     </button>
+                    <button type="button" class="btn btn-outline btn-icon-only btn-edit-install-date-action" data-inv="${inv.id}" data-slot="${slot.slot_number}" data-serial="${slot.current_serial}" data-installed-at="${slot.installed_at || ''}" title="Configurar Fecha de Instalación (installed_at)">
+                        <i class="fa-regular fa-calendar-days"></i>
+                    </button>
                     <button type="button" class="btn btn-outline btn-icon-only btn-module-history-action" data-serial="${slot.current_serial}" title="Ver Historial de Fallas">
                         <i class="fa-solid fa-clock-rotate-left"></i>
                     </button>
@@ -342,6 +349,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         slotsContainer.querySelectorAll('.btn-replace-action').forEach(b => {
             b.onclick = () => openReplaceModal(b.dataset.inv, parseInt(b.dataset.slot), b.dataset.serial);
+        });
+
+        slotsContainer.querySelectorAll('.btn-edit-install-date-action').forEach(b => {
+            b.onclick = () => openEditInstallDateModal(b.dataset.inv, parseInt(b.dataset.slot), b.dataset.serial, b.dataset.installedAt);
         });
 
         slotsContainer.querySelectorAll('.btn-module-history-action').forEach(b => {
@@ -375,7 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Apply read-only mode state to card action buttons
         if (isReadOnly) {
-            slotsContainer.querySelectorAll('.btn-stop-action, .btn-restart-action, .btn-replace-action').forEach(b => {
+            slotsContainer.querySelectorAll('.btn-stop-action, .btn-restart-action, .btn-replace-action, .btn-edit-install-date-action').forEach(b => {
                 b.disabled = true;
                 b.classList.add('btn-read-only-disabled');
                 b.title = "Acción no permitida en Modo Solo Lectura (Stakeholders)";
@@ -490,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Render All Modules Catalog Tab
     async function renderModulesCatalog() {
         const body = document.getElementById('modules-catalog-body');
-        body.innerHTML = '<tr><td colspan="8" style="text-align:center;">Cargando catálogo...</td></tr>';
+        body.innerHTML = '<tr><td colspan="9" style="text-align:center;">Cargando catálogo...</td></tr>';
 
         try {
             const modules = await fetch('/api/modules').then(r => r.json());
@@ -505,24 +516,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
             body.innerHTML = '';
             if (filtered.length === 0) {
-                body.innerHTML = `<tr><td colspan="8" style="text-align:center;">No se encontraron módulos coincidentes.</td></tr>`;
+                body.innerHTML = `<tr><td colspan="9" style="text-align:center;">No se encontraron módulos coincidentes.</td></tr>`;
                 return;
             }
 
             filtered.forEach(m => {
                 const tr = document.createElement('tr');
-                const met = m.metrics;
+                const met = m.metrics || {};
+                const instDate = (met && met.installed_at) || m.installed_at || m.registered_at;
 
                 tr.innerHTML = `
                     <td><code>${m.serial_number}</code></td>
                     <td><strong>${m.inverter_id ? `Inversor ${m.inverter_id}` : '<span class="text-muted">En Respaldo</span>'}</strong></td>
                     <td>${m.slot_number ? `Slot ${m.slot_number}` : '-'}</td>
+                    <td>${instDate ? formatDate(instDate) : '<span class="text-muted">-</span>'}</td>
                     <td><span class="status-tag ${m.status}">${m.status === 'operating' ? 'Operativo' : (m.status === 'in_repair' ? 'En Reparación' : 'Respaldo/Retirado')}</span></td>
-                    <td>${met.net_operating_hours} hrs</td>
+                    <td>${met.net_operating_hours !== undefined ? met.net_operating_hours : 0} hrs</td>
                     <td>${m.total_repairs}</td>
-                    <td><strong style="color:${met.uptime_percent >= 90 ? 'var(--primary)' : 'var(--accent-amber)'}">${met.uptime_percent}%</strong></td>
+                    <td><strong style="color:${(met.uptime_percent || 0) >= 90 ? 'var(--primary)' : 'var(--accent-amber)'}">${met.uptime_percent || 0}%</strong></td>
                     <td>
                         <div style="display:flex; gap:0.3rem;">
+                            ${m.inverter_id && m.slot_number ? `
+                                <button class="btn btn-outline btn-sm btn-edit-install-date-action" data-inv="${m.inverter_id}" data-slot="${m.slot_number}" data-serial="${m.serial_number}" data-installed-at="${instDate || ''}" title="Configurar Fecha de Instalación (installed_at)">
+                                    <i class="fa-regular fa-calendar-days"></i> Fecha Inst.
+                                </button>
+                            ` : ''}
                             <button class="btn btn-outline btn-sm btn-module-history-action" data-serial="${m.serial_number}" title="Ver historial de fallas del módulo">
                                 <i class="fa-solid fa-clock-rotate-left"></i> Historial
                             </button>
@@ -536,6 +554,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 `;
                 body.appendChild(tr);
+            });
+
+            body.querySelectorAll('.btn-edit-install-date-action').forEach(b => {
+                b.onclick = () => openEditInstallDateModal(b.dataset.inv, parseInt(b.dataset.slot), b.dataset.serial, b.dataset.installedAt);
             });
 
             body.querySelectorAll('.btn-module-history-action').forEach(b => {
@@ -840,9 +862,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('stop-inverter-id').value = invId || 'A1';
         populateSlotDropdown('stop-inverter-id', 'stop-slot-number', slotNum);
         
-        // Set default datetime to now
-        const nowIso = new Date().toISOString().slice(0, 16);
-        document.getElementById('stop-time').value = nowIso;
+        // Set default datetime to now in local time
+        document.getElementById('stop-time').value = formatForDateTimeInput();
         document.getElementById('stop-reason').value = slotNum === 0 ? 'Parada general preventiva de unidad inversora' : '';
         document.getElementById('stop-diagnosis').value = '';
 
@@ -853,8 +874,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('restart-repair-id').value = repairId;
         document.getElementById('restart-serial-info').value = serial;
         
-        const nowIso = new Date().toISOString().slice(0, 16);
-        document.getElementById('restart-time').value = nowIso;
+        document.getElementById('restart-time').value = formatForDateTimeInput();
         document.getElementById('restart-diagnosis').value = '';
 
         modalRestart.classList.add('active');
@@ -864,8 +884,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('restart-repair-id').value = 0;
         document.getElementById('restart-serial-info').value = `TODOS LOS MÓDULOS DE UNIDAD INVERSORA ${inverterId}`;
         
-        const nowIso = new Date().toISOString().slice(0, 16);
-        document.getElementById('restart-time').value = nowIso;
+        document.getElementById('restart-time').value = formatForDateTimeInput();
         document.getElementById('restart-diagnosis').value = 'Reanudación general de servicio tras mantenimiento de unidad';
 
         modalRestart.classList.add('active');
@@ -883,8 +902,7 @@ document.addEventListener('DOMContentLoaded', () => {
             selectNew.innerHTML += `<option value="${sp.serial_number}">${sp.serial_number} (Respaldo)</option>`;
         });
 
-        const nowIso = new Date().toISOString().slice(0, 16);
-        document.getElementById('replace-timestamp').value = nowIso;
+        document.getElementById('replace-timestamp').value = formatForDateTimeInput();
         document.getElementById('replace-reason').value = '';
 
         modalReplace.classList.add('active');
@@ -904,8 +922,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('edit-repair-id-input').value = r.id;
         document.getElementById('edit-repair-serial-display').value = r.serial_number;
         document.getElementById('edit-repair-location-display').value = `Inversor ${r.inverter_id} - Slot ${r.slot_number}`;
-        document.getElementById('edit-repair-stop-time').value = new Date(r.stop_time).toISOString().slice(0, 16);
-        document.getElementById('edit-repair-restart-time').value = r.restart_time ? new Date(r.restart_time).toISOString().slice(0, 16) : '';
+        document.getElementById('edit-repair-stop-time').value = formatForDateTimeInput(r.stop_time);
+        document.getElementById('edit-repair-restart-time').value = r.restart_time ? formatForDateTimeInput(r.restart_time) : '';
         document.getElementById('edit-repair-reason').value = r.reason || '';
         document.getElementById('edit-repair-diagnosis').value = r.diagnosis || '';
 
@@ -919,11 +937,41 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('edit-replacement-id-input').value = rep.id;
         document.getElementById('edit-rep-old-display').value = rep.old_serial;
         document.getElementById('edit-rep-new-display').value = rep.new_serial;
-        document.getElementById('edit-rep-timestamp').value = new Date(rep.timestamp).toISOString().slice(0, 16);
+        document.getElementById('edit-rep-timestamp').value = formatForDateTimeInput(rep.timestamp);
         document.getElementById('edit-rep-technician').value = rep.performed_by || 'Técnico Solar';
         document.getElementById('edit-rep-reason').value = rep.reason || '';
 
         document.getElementById('modal-edit-replacement-event').classList.add('active');
+    }
+
+    function formatForDateTimeInput(dateStr) {
+        if (!dateStr) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const mins = String(now.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${mins}`;
+        }
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '';
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hours = String(d.getHours()).padStart(2, '0');
+        const mins = String(d.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${mins}`;
+    }
+
+    function openEditInstallDateModal(invId, slotNum, currentSerial, currentInstalledAt) {
+        document.getElementById('edit-install-inv-input').value = invId;
+        document.getElementById('edit-install-slot-input').value = slotNum;
+        document.getElementById('edit-install-location-display').value = `Inversor ${invId} - Slot ${slotNum}`;
+        document.getElementById('edit-install-serial-display').value = currentSerial;
+
+        document.getElementById('edit-install-date-input').value = formatForDateTimeInput(currentInstalledAt);
+        document.getElementById('modal-edit-install-date').classList.add('active');
     }
 
     function populateSlotDropdown(invSelectId, slotSelectId, selectedSlotNum) {
@@ -1253,6 +1301,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast(err.message, 'error');
             }
         };
+
+        // Form 8: Edit Install Date
+        const formEditInstall = document.getElementById('form-edit-install-date');
+        if (formEditInstall) {
+            formEditInstall.onsubmit = async (e) => {
+                e.preventDefault();
+                const invId = document.getElementById('edit-install-inv-input').value;
+                const slotNum = parseInt(document.getElementById('edit-install-slot-input').value);
+                const installDate = document.getElementById('edit-install-date-input').value;
+
+                try {
+                    const res = await fetch(`/api/slots/${invId}/${slotNum}/installed-at`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ installed_at: installDate })
+                    });
+
+                    if (!res.ok) throw new Error((await res.json()).detail);
+
+                    showToast(`Fecha de instalación actualizada para Inversor ${invId} Slot ${slotNum}`);
+                    document.getElementById('modal-edit-install-date').classList.remove('active');
+                    await loadAllData();
+                } catch (err) {
+                    showToast(err.message, 'error');
+                }
+            };
+        }
     }
 
     // Action Buttons Wiring
@@ -1408,16 +1483,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 4000);
     }
 
-    // Format Date helper
+    // Format Date helper (deterministic cross-browser component rendering)
     function formatDate(dateStr) {
         if (!dateStr) return '-';
-        const d = new Date(dateStr);
-        return d.toLocaleString('es-ES', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+        let cleanStr = String(dateStr).replace('Z', '');
+        const d = new Date(cleanStr.includes('T') ? cleanStr : cleanStr.replace(' ', 'T'));
+        if (isNaN(d.getTime())) return String(dateStr);
+
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        const hours = String(d.getHours()).padStart(2, '0');
+        const mins = String(d.getMinutes()).padStart(2, '0');
+        return `${day}/${month}/${year}, ${hours}:${mins}`;
     }
 });

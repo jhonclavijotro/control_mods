@@ -42,15 +42,14 @@ La aplicación de **Gestión de Módulos de Potencia (Solaris Control)** es una 
 
 ## 💡 Componentes Principales
 
-### 1. Backend REST API (Python / FastAPI)
-- Ubicación: `backend/main.py`, `backend/models.py`, `backend/database.py`, `backend/solar_engine.py`.
-- Encargado de la persistencia de datos, motor de reglas de negocio, cálculo de métricas de operación solar (filtradas en la ventana 7:00 AM - 6:00 PM) y validaciones estrictas.
+### 3. Motor de Cálculo de Tiempo de Operación Solar (solar_engine.py)
+- **Ventana de Radiación Activa**: Filtra estrictamente las horas entre **07:00 AM y 06:00 PM (11 horas solares por día)**. Las horas nocturnas no suman al tiempo de generación ni a las penalizaciones por parada.
+- **Independencia del Servidor**: El tiempo acumulado es **persistente y determinista**. No depende de si la aplicación o el servidor están encendidos, sino del cálculo matemático de intervalos entre la fecha de instalación (`installed_at`), la fecha actual (`current_time`) y las paradas registradas (`stop_time` / `restart_time`).
+- **Línea Base Operativa**: Garantiza una ventana de evaluación estándar para evitar distorsiones del 0.0% cuando se registran fallas en módulos sembrados en fechas recientes.
 
-### 2. Frontend SPA (HTML5 / Vanilla CSS / JS)
-- Ubicación: `static/index.html`, `static/css/styles.css`, `static/js/app.js`.
-- Diseño moderno responsivo con estética glassmorphism, soporte para temas (oscuro/claro) y botones de acción compactos basados en íconos con tooltips descriptivos.
+---
 
-### 3. Arquitectura Multi-Entorno y Túneles (Docker Compose)
+## 🏗️ Arquitectura Multi-Entorno y Túneles (Docker Compose)
 - **Instancia Administrador** (Puerto `8000`): Permite lectura y escritura completa (crear paradas, reinicios, reemplazos, eliminar inventarios).
 - **Instancia Stakeholder / Solo Lectura** (Puerto `8001`): Activa la variable `READ_ONLY_MODE=true`, bloqueando cualquier mutación con código HTTP `403 Forbidden` y mostrando un banner informativo en la UI.
 - **Túnel ngrok**: Contenedor `ngrok/ngrok:latest` que expone la instancia de stakeholders de forma segura vía HTTPS a la web sin exponer la IP ni puertos locales.

@@ -39,11 +39,20 @@ def calculate_module_metrics(installed_at: datetime, repair_logs, current_time: 
     if current_time is None:
         current_time = datetime.utcnow()
 
+    # Determine baseline evaluation window start date.
     if not installed_at:
-        installed_at = current_time - timedelta(days=30)  # Default fallback if unknown
+        eval_start = current_time - timedelta(days=30)
+    else:
+        eval_start = installed_at
 
-    # Total potential solar hours from installation until now
-    total_potential_solar_hours = calculate_solar_hours_in_range(installed_at, current_time)
+    # If repair logs exist and start earlier than installed_at, expand eval_start to cover them
+    if repair_logs:
+        for log in repair_logs:
+            if log.stop_time and log.stop_time < eval_start:
+                eval_start = log.stop_time
+
+    # Total potential solar hours from eval_start until current_time
+    total_potential_solar_hours = calculate_solar_hours_in_range(eval_start, current_time)
 
     # Calculate total repair downtime within solar working hours
     solar_downtime_hours = 0.0
@@ -67,7 +76,7 @@ def calculate_module_metrics(installed_at: datetime, repair_logs, current_time: 
     mtbf = net_operating_hours / (total_repairs_count + 1)
 
     return {
-        "installed_at": installed_at.isoformat(),
+        "installed_at": installed_at.isoformat() if installed_at else eval_start.isoformat(),
         "total_potential_solar_hours": round(total_potential_solar_hours, 1),
         "solar_downtime_hours": round(solar_downtime_hours, 1),
         "net_operating_hours": round(net_operating_hours, 1),

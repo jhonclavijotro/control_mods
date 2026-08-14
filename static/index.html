@@ -340,6 +340,7 @@
                                 <th>Número Serial</th>
                                 <th>Inversor Asignado</th>
                                 <th>Slot</th>
+                                <th>Fecha de Instalación</th>
                                 <th>Estado</th>
                                 <th>Horas Operación (7am-6pm)</th>
                                 <th>Reparaciones</th>
@@ -482,6 +483,41 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline close-modal">Cancelar</button>
                     <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 8: Editar Fecha de Instalación de Módulo/Slot -->
+    <div class="modal-overlay" id="modal-edit-install-date">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-regular fa-calendar-check"></i> Configurar Fecha y Hora de Instalación</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="form-edit-install-date">
+                <input type="hidden" id="edit-install-inv-input">
+                <input type="hidden" id="edit-install-slot-input">
+                <div class="modal-body">
+                    <div class="form-row grid-2">
+                        <div class="form-group">
+                            <label>Inversor / Slot</label>
+                            <input type="text" id="edit-install-location-display" class="form-control" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Módulo Serial</label>
+                            <input type="text" id="edit-install-serial-display" class="form-control" readonly>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fa-regular fa-calendar-days"></i> Fecha y Hora de Instalación (`installed_at`)</label>
+                        <input type="datetime-local" id="edit-install-date-input" required class="form-control">
+                        <small class="text-muted">Establece la fecha a partir de la cual se calcula el periodo de operación solar y la disponibilidad acumulada del módulo.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline close-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Guardar Fecha de Instalación</button>
                 </div>
             </form>
         </div>
@@ -694,6 +730,6 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- JS Code -->
-    <script src="/static/js/app.js?v=2.0"></script>
+    <script src="/static/js/app.js?v=3.2"></script>
 </body>
 </html>
