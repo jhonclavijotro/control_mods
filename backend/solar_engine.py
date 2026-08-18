@@ -31,10 +31,10 @@ def calculate_solar_hours_in_range(start_dt: datetime, end_dt: datetime) -> floa
 
     return round(total_seconds / 3600.0, 2)
 
-def calculate_module_metrics(installed_at: datetime, repair_logs, current_time: datetime = None) -> dict:
+def calculate_module_metrics(installed_at: datetime, repair_logs, current_time: datetime = None, period_start: datetime = None) -> dict:
     """
     Computes cumulative solar operating hours, downtime hours during solar windows,
-    availability percentage, and MTBF for a given power module.
+    availability percentage, and MTBF for a given power module over a specified period window.
     """
     if current_time is None:
         current_time = datetime.utcnow()
@@ -45,25 +45,27 @@ def calculate_module_metrics(installed_at: datetime, repair_logs, current_time: 
     else:
         eval_start = installed_at
 
-    # If repair logs exist and start earlier than installed_at, expand eval_start to cover them
-    if repair_logs:
-        for log in repair_logs:
-            if log.stop_time and log.stop_time < eval_start:
-                eval_start = log.stop_time
+    if period_start:
+        eval_start = max(eval_start, period_start)
 
     # Total potential solar hours from eval_start until current_time
     total_potential_solar_hours = calculate_solar_hours_in_range(eval_start, current_time)
 
     # Calculate total repair downtime within solar working hours
     solar_downtime_hours = 0.0
-    total_repairs_count = len(repair_logs) if repair_logs else 0
+    total_repairs_count = 0
 
     if repair_logs:
         for log in repair_logs:
             stop = log.stop_time
             restart = log.restart_time if log.restart_time else current_time
-            downtime_in_window = calculate_solar_hours_in_range(stop, restart)
-            solar_downtime_hours += downtime_in_window
+            # Ensure window overlap with [eval_start, current_time]
+            window_stop = max(stop, eval_start)
+            window_restart = min(restart, current_time)
+            if window_stop < window_restart:
+                total_repairs_count += 1
+                downtime_in_window = calculate_solar_hours_in_range(window_stop, window_restart)
+                solar_downtime_hours += downtime_in_window
 
     net_operating_hours = max(0.0, total_potential_solar_hours - solar_downtime_hours)
     

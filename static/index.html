@@ -10,14 +10,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
     <!-- FontAwesome / Lucide Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js Library (Local Bundle) -->
+    <script src="/static/js/chart.min.js"></script>
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/css/styles.css?v=8.0">
 </head>
 <body>
 
     <!-- Header Navigation Bar -->
     <header class="app-header">
-        <div class="header-brand">
+        <div class="header-brand" id="header-brand-logo" style="cursor: pointer;" title="Volver a la Página Principal del Dashboard">
             <div class="logo-icon">
                 <i class="fa-solid fa-sun-plant-wilt"></i>
             </div>
@@ -51,24 +53,6 @@
             <i class="fa-solid fa-eye"></i> <strong>ENTORNO DE SOLO LECTURA (STAKEHOLDERS):</strong> Las funciones de modificación y registro de reparaciones están restringidas.
         </div>
 
-        <!-- Navigation Tabs Bar -->
-        <nav class="tabs-nav-wrapper">
-            <div class="tabs-scroll" id="tabs-bar">
-                <button type="button" class="tab-btn active" data-tab="dashboard">
-                    <i class="fa-solid fa-chart-pie"></i> Dashboard
-                </button>
-                <button type="button" class="tab-btn" data-tab="spares">
-                    <i class="fa-solid fa-boxes-stacked"></i> Respaldo
-                </button>
-                <button type="button" class="tab-btn" data-tab="history">
-                    <i class="fa-solid fa-list-check"></i> Historial
-                </button>
-                <button type="button" class="tab-btn" data-tab="modules">
-                    <i class="fa-solid fa-microchip"></i> Catálogo
-                </button>
-            </div>
-        </nav>
-
         <!-- Tab Content Areas -->
         <section class="content-wrapper">
 
@@ -81,51 +65,95 @@
 
                 <!-- KPI Metric Cards -->
                 <div class="kpi-grid">
-                    <div class="kpi-card success">
-                        <div class="kpi-icon"><i class="fa-solid fa-bolt"></i></div>
-                        <div class="kpi-content">
-                            <span class="kpi-label">Módulos Operativos</span>
-                            <h3 id="dash-op-count">--</h3>
-                            <span class="kpi-sub">de 46 módulos activos</span>
-                        </div>
-                    </div>
-
-                    <div class="kpi-card warning">
-                        <div class="kpi-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                        <div class="kpi-content">
-                            <span class="kpi-label">En Reparación</span>
-                            <h3 id="dash-repair-count">--</h3>
-                            <span class="kpi-sub">paradas pendientes</span>
-                        </div>
-                    </div>
-
-                    <div class="kpi-card info">
-                        <div class="kpi-icon"><i class="fa-solid fa-boxes-packing"></i></div>
-                        <div class="kpi-content">
-                            <span class="kpi-label">Módulos de Respaldo</span>
-                            <h3 id="dash-spare-count">--</h3>
-                            <span class="kpi-sub">disponibles en stock</span>
-                        </div>
-                    </div>
-
-                    <div class="kpi-card primary">
-                        <div class="kpi-icon"><i class="fa-solid fa-clock"></i></div>
-                        <div class="kpi-content">
-                            <span class="kpi-label">Horas Solares Generadas</span>
-                            <h3 id="dash-total-hours">--</h3>
-                            <span class="kpi-sub">ventana 7am-6pm acumulada</span>
-                        </div>
-                    </div>
+            <div class="kpi-card success" id="kpi-card-operating" role="button" tabindex="0" title="Ver Catálogo e Inventario General de Módulos">
+                <div class="kpi-icon"><i class="fa-solid fa-bolt"></i></div>
+                <div class="kpi-content">
+                    <span class="kpi-label">Módulos Operativos</span>
+                    <h3 id="dash-op-count">--</h3>
+                    <span class="kpi-sub">de 46 módulos activos (clic para ver catálogo)</span>
                 </div>
+            </div>
 
-                <!-- Live Farm Topology Grid -->
+            <div class="kpi-card warning" id="kpi-card-repair" role="button" tabindex="0" title="Ver Historial de Paradas por Reparación">
+                <div class="kpi-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="kpi-content">
+                    <span class="kpi-label">En Reparación</span>
+                    <h3 id="dash-repair-count">--</h3>
+                    <span class="kpi-sub">paradas pendientes (clic para ver historial)</span>
+                </div>
+            </div>
+
+            <div class="kpi-card info" id="kpi-card-spares" role="button" tabindex="0" title="Ver Inventario de Módulos de Respaldo">
+                <div class="kpi-icon"><i class="fa-solid fa-boxes-packing"></i></div>
+                <div class="kpi-content">
+                    <span class="kpi-label">Módulos de Respaldo</span>
+                    <h3 id="dash-spare-count">--</h3>
+                    <span class="kpi-sub">disponibles en stock (clic para ver respaldo)</span>
+                </div>
+            </div>
+
+            <div class="kpi-card primary" id="kpi-card-hours" role="button" tabindex="0" title="Ver Historial de Eventos y Generación">
+                <div class="kpi-icon"><i class="fa-solid fa-clock"></i></div>
+                <div class="kpi-content">
+                    <span class="kpi-label">Horas Solares Generadas</span>
+                    <h3 id="dash-total-hours">--</h3>
+                    <span class="kpi-sub">ventana 7am-6pm acumulada (clic para ver historial)</span>
+                </div>
+            </div>
+        </div>
+
+                <!-- Live Farm Topology Grid (Matriz de Unidades Inversoras) -->
                 <div class="section-block">
                     <div class="block-title">
                         <h3><i class="fa-solid fa-network-wired"></i> Matriz de Unidades Inversoras</h3>
-                        <span>Resumen rápido de salud por inversor</span>
+                        <span>Resumen rápido de salud por inversor (Haga clic para acceder al detalle)</span>
                     </div>
                     <div class="inverters-summary-grid" id="inverters-summary-container">
                         <!-- Dynamic Inverter Cards rendering -->
+                    </div>
+                </div>
+
+                <!-- Disponibilidad por Unidad Inversora (Palmaseca 1 & 2) -->
+                <div class="section-block">
+                    <div class="block-title">
+                        <h3><i class="fa-solid fa-chart-column"></i> Disponibilidad por Unidad Inversora</h3>
+                        <span>Porcentaje de disponibilidad (% Disponible vs % Indisponible por Inversor)</span>
+                    </div>
+                    <div class="dashboard-charts-grid">
+                        <div class="chart-card">
+                            <div class="chart-header">
+                                <div class="chart-header-title">
+                                    <span class="chart-plant-badge p1"><i class="fa-solid fa-solar-panel"></i> Palmaseca 1</span>
+                                    <h4>Inversores A1, A2, B1, B2</h4>
+                                </div>
+                                <select class="chart-period-select" id="select-period-palmaseca1" type="button">
+                                    <option value="month" selected>Mes Actual (Agosto 2026)</option>
+                                    <option value="all_time">Total Histórico (desde 13/08/2026)</option>
+                                    <option value="last_30">Últimos 30 Días</option>
+                                    <option value="year">Año 2026</option>
+                                </select>
+                            </div>
+                            <div class="chart-body">
+                                <canvas id="chart-inv-palmaseca1"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card">
+                            <div class="chart-header">
+                                <div class="chart-header-title">
+                                    <span class="chart-plant-badge p2"><i class="fa-solid fa-solar-panel"></i> Palmaseca 2</span>
+                                    <h4>Inversores C1, C2, D1, E1</h4>
+                                </div>
+                                <select class="chart-period-select" id="select-period-palmaseca2" type="button">
+                                    <option value="month" selected>Mes Actual (Agosto 2026)</option>
+                                    <option value="all_time">Total Histórico (desde 13/08/2026)</option>
+                                    <option value="last_30">Últimos 30 Días</option>
+                                    <option value="year">Año 2026</option>
+                                </select>
+                            </div>
+                            <div class="chart-body">
+                                <canvas id="chart-inv-palmaseca2"></canvas>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -160,8 +188,8 @@
                 <div class="pane-header flex-between">
                     <div>
                         <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem;">
-                            <button type="button" class="btn btn-outline btn-sm" id="btn-back-to-dashboard" title="Volver al Dashboard principal">
-                                <i class="fa-solid fa-arrow-left"></i> Volver al Dashboard
+                            <button type="button" class="btn btn-outline btn-sm btn-back-to-dashboard" id="btn-back-to-dashboard" title="Volver al Dashboard principal">
+                                <i class="fa-solid fa-house"></i> Volver al Dashboard
                             </button>
                             <h2 id="inv-title" style="margin: 0;">⚡ Unidad Inversora A1</h2>
                         </div>
@@ -196,7 +224,12 @@
             <div class="tab-pane" id="tab-spares">
                 <div class="pane-header flex-between">
                     <div>
-                        <h2><i class="fa-solid fa-boxes-stacked"></i> Inventario de Módulos de Respaldo</h2>
+                        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem;">
+                            <button type="button" class="btn btn-outline btn-sm btn-back-to-dashboard" title="Volver al Dashboard principal">
+                                <i class="fa-solid fa-house"></i> Volver al Dashboard
+                            </button>
+                            <h2 style="margin: 0;"><i class="fa-solid fa-boxes-stacked"></i> Inventario de Módulos de Respaldo</h2>
+                        </div>
                         <p>Gestión de módulos disponibles para sustitución inmediata en caso de avería.</p>
                     </div>
                     <button class="btn btn-primary" id="btn-add-spare">
@@ -213,7 +246,12 @@
             <div class="tab-pane" id="tab-history">
                 <div class="pane-header flex-between">
                     <div>
-                        <h2><i class="fa-solid fa-book"></i> Registros e Historial Completo de Mantenimiento</h2>
+                        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem;">
+                            <button type="button" class="btn btn-outline btn-sm btn-back-to-dashboard" title="Volver al Dashboard principal">
+                                <i class="fa-solid fa-house"></i> Volver al Dashboard
+                            </button>
+                            <h2 style="margin: 0;"><i class="fa-solid fa-book"></i> Registros e Historial Completo de Mantenimiento</h2>
+                        </div>
                         <p>Auditoría de paradas por reparación y sustituciones de módulos de potencia.</p>
                     </div>
                     <button class="btn btn-outline" id="btn-export-csv">
@@ -295,6 +333,7 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="history-pagination-container" class="pagination-container"></div>
 
                     <h3>Reemplazos Realizados</h3>
                     <div class="table-responsive">
@@ -325,7 +364,12 @@
             <div class="tab-pane" id="tab-modules">
                 <div class="pane-header flex-between">
                     <div>
-                        <h2><i class="fa-solid fa-microchip"></i> Catálogo e Inventario General de Módulos</h2>
+                        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem;">
+                            <button type="button" class="btn btn-outline btn-sm btn-back-to-dashboard" title="Volver al Dashboard principal">
+                                <i class="fa-solid fa-house"></i> Volver al Dashboard
+                            </button>
+                            <h2 style="margin: 0;"><i class="fa-solid fa-microchip"></i> Catálogo e Inventario General de Módulos</h2>
+                        </div>
                         <p>Consolidado global de todos los módulos de potencia registrados en la granja solar. Permite corregir números de serie.</p>
                     </div>
                     <div class="form-group mb-0" style="width: 280px;">
@@ -730,6 +774,6 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- JS Code -->
-    <script src="/static/js/app.js?v=3.2"></script>
+    <script src="/static/js/app.js?v=8.0"></script>
 </body>
 </html>

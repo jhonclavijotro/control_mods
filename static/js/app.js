@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let sparesData = [];
     let logsData = { repairs: [], replacements: [] };
     let isReadOnly = false;
+    let activeCharts = {};
+    let historyCurrentPage = 1;
+    const HISTORY_PAGE_SIZE = 20;
 
     // DOM Elements
     const tabsBar = document.getElementById('tabs-bar');
@@ -31,6 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
         bindFormEvents();
         bindActionButtons();
         bindHistoryFilterEvents();
+        bindChartPeriodEvents();
+        bindKPICardEvents();
         await checkAppConfig();
         await loadAllData();
     }
@@ -96,6 +101,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const label = theme === 'light' ? 'Modo Claro' : 'Modo Oscuro';
             showToast(`Tema cambiado a ${label}`, 'success');
         }
+
+        updateChartsTheme();
     }
 
     // Load data from Backend REST API
@@ -124,18 +131,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Tab Navigation Logic
     function bindTabEvents() {
-        tabsBar.addEventListener('click', (e) => {
-            const btn = e.target.closest('.tab-btn');
-            if (!btn) return;
+        if (tabsBar) {
+            tabsBar.addEventListener('click', (e) => {
+                const btn = e.target.closest('.tab-btn');
+                if (!btn) return;
 
-            const targetTab = btn.dataset.tab;
-            switchTab(targetTab);
-        });
-
-        const btnBackDash = document.getElementById('btn-back-to-dashboard');
-        if (btnBackDash) {
-            btnBackDash.onclick = () => switchTab('dashboard');
+                const targetTab = btn.dataset.tab;
+                switchTab(targetTab);
+            });
         }
+
+        // Header brand logo link to Dashboard
+        const brandLogo = document.getElementById('header-brand-logo');
+        if (brandLogo) {
+            brandLogo.onclick = () => switchTab('dashboard');
+        }
+
+        // All "Volver al Dashboard" buttons across sub-panes
+        document.querySelectorAll('.btn-back-to-dashboard').forEach(btn => {
+            btn.onclick = () => switchTab('dashboard');
+        });
     }
 
     function renderCurrentTab() {
@@ -229,6 +244,275 @@ document.addEventListener('DOMContentLoaded', () => {
                 recentBody.appendChild(tr);
             });
         }
+
+        // Render Availability Charts for Palmaseca 1 and Palmaseca 2
+        renderAvailabilityCharts();
+    }
+
+    // Availability Bar Charts Logic (Chart.js)
+    function updateChartsTheme() {
+        if (typeof Chart === 'undefined' || !activeCharts) return;
+        const isDark = (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark';
+        const textColor = isDark ? '#e2e8f0' : '#1e293b';
+        const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
+        const tooltipBg = isDark ? '#1e293b' : '#ffffff';
+        const tooltipText = isDark ? '#f8fafc' : '#0f172a';
+        const tooltipBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)';
+        const availColor = isDark ? '#10b981' : '#059669';
+        const unavailColor = isDark ? '#ef4444' : '#dc2626';
+
+        Object.keys(activeCharts).forEach(chartId => {
+            const chart = activeCharts[chartId];
+            if (!chart) return;
+
+            if (chart.options.scales.x) {
+                chart.options.scales.x.ticks.color = textColor;
+                chart.options.scales.x.grid.color = gridColor;
+            }
+            if (chart.options.scales.y) {
+                chart.options.scales.y.ticks.color = textColor;
+                chart.options.scales.y.grid.color = gridColor;
+            }
+            if (chart.options.plugins && chart.options.plugins.legend) {
+                chart.options.plugins.legend.labels.color = textColor;
+            }
+            if (chart.options.plugins && chart.options.plugins.tooltip) {
+                chart.options.plugins.tooltip.backgroundColor = tooltipBg;
+                chart.options.plugins.tooltip.titleColor = tooltipText;
+                chart.options.plugins.tooltip.bodyColor = tooltipText;
+                chart.options.plugins.tooltip.borderColor = tooltipBorder;
+            }
+            if (chart.data.datasets && chart.data.datasets.length >= 2) {
+                chart.data.datasets[0].backgroundColor = availColor;
+                chart.data.datasets[1].backgroundColor = unavailColor;
+            }
+            chart.update();
+        });
+    }
+
+    function createGroupedBarChart(canvasId, labels, uptimeData, downtimeData) {
+        if (typeof Chart === 'undefined') return;
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        if (activeCharts[canvasId]) {
+            activeCharts[canvasId].destroy();
+            delete activeCharts[canvasId];
+        }
+
+        const isDark = (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark';
+        const textColor = isDark ? '#e2e8f0' : '#1e293b';
+        const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
+        const tooltipBg = isDark ? '#1e293b' : '#ffffff';
+        const tooltipText = isDark ? '#f8fafc' : '#0f172a';
+        const tooltipBorder = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)';
+        const availColor = isDark ? '#10b981' : '#059669';
+        const unavailColor = isDark ? '#ef4444' : '#dc2626';
+
+        const verticalDataLabelsPlugin = {
+            id: 'verticalDataLabels',
+            afterDatasetsDraw(chart) {
+                const { ctx } = chart;
+                const currentIsDark = (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark';
+
+                chart.data.datasets.forEach((dataset, datasetIndex) => {
+                    const meta = chart.getDatasetMeta(datasetIndex);
+                    if (!meta || meta.hidden) return;
+
+                    meta.data.forEach((bar, index) => {
+                        const rawVal = dataset.data[index];
+                        if (rawVal === undefined || rawVal === null) return;
+                        const formattedVal = `${Number(rawVal).toFixed(1)}%`;
+
+                        const { x, y, base } = bar;
+                        const barHeight = Math.abs(base - y);
+
+                        ctx.save();
+                        ctx.font = '700 11px Inter, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+
+                        if (barHeight > 45) {
+                            const labelY = y + barHeight / 2;
+                            ctx.translate(x, labelY);
+                            ctx.rotate(-Math.PI / 2);
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillText(formattedVal, 0, 0);
+                        } else {
+                            const labelY = y - 22;
+                            ctx.translate(x, labelY);
+                            ctx.rotate(-Math.PI / 2);
+                            ctx.fillStyle = currentIsDark ? '#e2e8f0' : '#1e293b';
+                            ctx.fillText(formattedVal, 0, 0);
+                        }
+                        ctx.restore();
+                    });
+                });
+            }
+        };
+
+        const ctx = canvas.getContext('2d');
+        activeCharts[canvasId] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: '% Disponibilidad',
+                        data: uptimeData,
+                        backgroundColor: availColor,
+                        borderRadius: 4,
+                        borderSkipped: false
+                    },
+                    {
+                        label: '% Indisponibilidad',
+                        data: downtimeData,
+                        backgroundColor: unavailColor,
+                        borderRadius: 4,
+                        borderSkipped: false
+                    }
+                ]
+            },
+            plugins: [verticalDataLabelsPlugin],
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 750,
+                    easing: 'easeOutQuart'
+                },
+                onClick: function(event, elements) {
+                    if (elements && elements.length > 0) {
+                        const index = elements[0].index;
+                        const label = labels[index];
+                        let invId = null;
+                        if (label && label.includes('Inversor ')) {
+                            invId = label.replace('Inversor ', '').trim();
+                        } else if (label && label.includes('-M')) {
+                            invId = label.split('-M')[0].trim();
+                        }
+                        if (invId && ['A1','A2','B1','B2','C1','C2','D1','E1'].includes(invId)) {
+                            switchTab(invId);
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: textColor,
+                            font: { family: 'Inter', size: 12, weight: '600' },
+                            usePointStyle: true,
+                            boxWidth: 8
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: tooltipBg,
+                        titleColor: tooltipText,
+                        bodyColor: tooltipText,
+                        borderColor: tooltipBorder,
+                        borderWidth: 1,
+                        padding: 10,
+                        callbacks: {
+                            label: function(context) {
+                                return ` ${context.dataset.label}: ${context.raw}%`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        stacked: false,
+                        ticks: {
+                            color: textColor,
+                            font: { family: 'Inter', size: 11, weight: '600' }
+                        },
+                        grid: {
+                            color: gridColor
+                        }
+                    },
+                    y: {
+                        stacked: false,
+                        max: 110,
+                        ticks: {
+                            color: textColor,
+                            font: { family: 'Inter', size: 10 },
+                            callback: function(val) { return val <= 100 ? val + '%' : ''; }
+                        },
+                        grid: {
+                            color: gridColor
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    async function renderPlantAvailabilityChart(canvasId, invIds, periodVal) {
+        try {
+            const data = await fetch(`/api/inverters?period=${periodVal}`).then(r => r.json());
+            const labels = [];
+            const uptime = [];
+            const downtime = [];
+
+            invIds.forEach(id => {
+                const inv = data.find(i => i.id === id);
+                if (inv) {
+                    labels.push(`Inversor ${inv.id}`);
+                    const slots = inv.slots || [];
+                    const avgUptime = slots.length ? (slots.reduce((sum, s) => sum + (s.metrics ? s.metrics.uptime_percent : 100), 0) / slots.length) : 100;
+                    const up = Math.round(avgUptime * 10) / 10;
+                    const down = Math.round((100 - up) * 10) / 10;
+                    uptime.push(up);
+                    downtime.push(down);
+                }
+            });
+
+            createGroupedBarChart(canvasId, labels, uptime, downtime);
+        } catch (err) {
+            console.error(`Error al renderizar gráfico para ${canvasId}:`, err);
+        }
+    }
+
+    function renderAvailabilityCharts() {
+        const p1Select = document.getElementById('select-period-palmaseca1');
+        const p2Select = document.getElementById('select-period-palmaseca2');
+
+        const periodP1 = p1Select ? p1Select.value : 'month';
+        const periodP2 = p2Select ? p2Select.value : 'month';
+
+        renderPlantAvailabilityChart('chart-inv-palmaseca1', ['A1', 'A2', 'B1', 'B2'], periodP1);
+        renderPlantAvailabilityChart('chart-inv-palmaseca2', ['C1', 'C2', 'D1', 'E1'], periodP2);
+    }
+
+    function bindChartPeriodEvents() {
+        const p1Select = document.getElementById('select-period-palmaseca1');
+        if (p1Select) {
+            p1Select.addEventListener('change', () => {
+                renderPlantAvailabilityChart('chart-inv-palmaseca1', ['A1', 'A2', 'B1', 'B2'], p1Select.value);
+            });
+        }
+
+        const p2Select = document.getElementById('select-period-palmaseca2');
+        if (p2Select) {
+            p2Select.addEventListener('change', () => {
+                renderPlantAvailabilityChart('chart-inv-palmaseca2', ['C1', 'C2', 'D1', 'E1'], p2Select.value);
+            });
+        }
+    }
+
+    function bindKPICardEvents() {
+        const kpiOp = document.getElementById('kpi-card-operating');
+        if (kpiOp) kpiOp.onclick = () => switchTab('modules');
+
+        const kpiRepair = document.getElementById('kpi-card-repair');
+        if (kpiRepair) kpiRepair.onclick = () => switchTab('history');
+
+        const kpiSpares = document.getElementById('kpi-card-spares');
+        if (kpiSpares) kpiSpares.onclick = () => switchTab('spares');
+
+        const kpiHours = document.getElementById('kpi-card-hours');
+        if (kpiHours) kpiHours.onclick = () => switchTab('history');
     }
 
     // Render Individual Inverter Tab (A1..E1)
@@ -476,24 +760,30 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Hide all panes
-        tabPanes.forEach(pane => pane.classList.remove('active'));
+        tabPanes.forEach(pane => pane?.classList?.remove('active'));
 
         // Handle Pane Switching
+        const dashPane = document.getElementById('tab-dashboard');
+        const sparesPane = document.getElementById('tab-spares');
+        const historyPane = document.getElementById('tab-history');
+        const modulesPane = document.getElementById('tab-modules');
+        const invPane = document.getElementById('tab-inverter');
+
         if (tabId === 'dashboard') {
-            document.getElementById('tab-dashboard').classList.add('active');
+            if (dashPane) dashPane.classList.add('active');
             renderDashboard();
         } else if (tabId === 'spares') {
-            document.getElementById('tab-spares').classList.add('active');
+            if (sparesPane) sparesPane.classList.add('active');
             renderSpares();
         } else if (tabId === 'history') {
-            document.getElementById('tab-history').classList.add('active');
+            if (historyPane) historyPane.classList.add('active');
             renderHistory();
         } else if (tabId === 'modules') {
-            document.getElementById('tab-modules').classList.add('active');
+            if (modulesPane) modulesPane.classList.add('active');
             renderModulesCatalog();
         } else {
             // Individual Inverter Tab (A1, A2, B1, B2, C1, C2, D1, E1)
-            document.getElementById('tab-inverter').classList.add('active');
+            if (invPane) invPane.classList.add('active');
             renderInverterPane(tabId);
         }
     }
@@ -683,12 +973,20 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
+        // Pagination logic for filteredRepairs
+        const totalPages = Math.ceil(filteredRepairs.length / HISTORY_PAGE_SIZE) || 1;
+        if (historyCurrentPage > totalPages) historyCurrentPage = totalPages;
+        if (historyCurrentPage < 1) historyCurrentPage = 1;
+
+        const startIndex = (historyCurrentPage - 1) * HISTORY_PAGE_SIZE;
+        const pageRepairs = filteredRepairs.slice(startIndex, startIndex + HISTORY_PAGE_SIZE);
+
         // Render Repairs Table Body
         repairsBody.innerHTML = '';
         if (filteredRepairs.length === 0) {
             repairsBody.innerHTML = `<tr><td colspan="11" style="text-align:center;" class="text-muted">No se encontraron paradas por reparación coincidentes.</td></tr>`;
         } else {
-            filteredRepairs.forEach(r => {
+            pageRepairs.forEach(r => {
                 const tr = document.createElement('tr');
                 const attachHtml = r.attachment_path ? `
                     <a href="${r.attachment_path}" target="_blank" class="btn btn-outline btn-sm" style="color:var(--primary); border-color:rgba(6,182,212,0.3);" title="${r.attachment_name}">
@@ -722,6 +1020,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 repairsBody.appendChild(tr);
             });
+        }
+
+        // Render Pagination Bar
+        const pagContainer = document.getElementById('history-pagination-container');
+        if (pagContainer) {
+            if (filteredRepairs.length <= HISTORY_PAGE_SIZE) {
+                pagContainer.innerHTML = '';
+            } else {
+                pagContainer.innerHTML = `
+                    <div class="pagination-bar">
+                        <button type="button" class="btn btn-outline btn-sm" id="btn-prev-history-page" ${historyCurrentPage <= 1 ? 'disabled' : ''}>
+                            <i class="fa-solid fa-chevron-left"></i> Anterior
+                        </button>
+                        <span class="pagination-info">Página <strong>${historyCurrentPage}</strong> de <strong>${totalPages}</strong> (${filteredRepairs.length} paradas registradas)</span>
+                        <button type="button" class="btn btn-outline btn-sm" id="btn-next-history-page" ${historyCurrentPage >= totalPages ? 'disabled' : ''}>
+                            Siguiente <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                    </div>
+                `;
+
+                const btnPrev = document.getElementById('btn-prev-history-page');
+                const btnNext = document.getElementById('btn-next-history-page');
+                if (btnPrev) btnPrev.onclick = () => { if (historyCurrentPage > 1) { historyCurrentPage--; renderHistory(); } };
+                if (btnNext) btnNext.onclick = () => { if (historyCurrentPage < totalPages) { historyCurrentPage++; renderHistory(); } };
+            }
         }
 
         // Render Replacements Table Body
@@ -810,6 +1133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnApply) {
             btnApply.onclick = async (e) => {
                 if (e) e.preventDefault();
+                historyCurrentPage = 1;
                 await renderHistory();
                 showToast('Filtros aplicados correctamente');
             };
@@ -819,6 +1143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnClear) {
             btnClear.onclick = async (e) => {
                 if (e) e.preventDefault();
+                historyCurrentPage = 1;
                 if (invInput) invInput.value = '';
                 if (serialInput) serialInput.value = '';
                 if (statusInput) statusInput.value = 'all';

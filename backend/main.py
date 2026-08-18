@@ -274,18 +274,30 @@ def startup_event():
 # API Endpoints
 
 @app.get("/api/inverters")
-def get_inverters(db: Session = Depends(get_db)):
-    """Return list of all 8 inverters with their slots and live status."""
+def get_inverters(period: str = "month", db: Session = Depends(get_db)):
+    """Return list of all 8 inverters with their slots and live status for a specified period filter."""
     inverters = db.query(Inverter).all()
     result = []
     
     now = datetime.utcnow()
+    baseline_date = datetime(2026, 8, 13, 0, 0, 0)
+
+    if period == "all_time":
+        period_start = baseline_date
+    elif period == "last_30":
+        period_start = now - timedelta(days=30)
+    elif period == "year":
+        period_start = datetime(now.year, 1, 1, 0, 0, 0)
+    else:
+        # Default: current month accumulated
+        period_start = datetime(now.year, now.month, 1, 0, 0, 0)
+
     for inv in inverters:
         slots_data = []
         for slot in inv.slots:
             pm = db.query(PowerModule).filter(PowerModule.serial_number == slot.current_serial).first()
             repair_logs = db.query(RepairLog).filter(RepairLog.serial_number == slot.current_serial).all()
-            metrics = calculate_module_metrics(slot.installed_at, repair_logs, now)
+            metrics = calculate_module_metrics(slot.installed_at, repair_logs, now, period_start=period_start)
 
             # Check if there is an active open repair
             active_repair = db.query(RepairLog).filter(

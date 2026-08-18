@@ -29,6 +29,7 @@ services:
       - "8001:8000"
     volumes:
       - ./data:/app/data
+      - ./static:/app/static
     environment:
       - DATA_DIR=/app/data
       - READ_ONLY_MODE=true
