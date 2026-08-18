@@ -20,4 +20,6 @@ data/*.sqlite3
 .DS_Store
 Thumbs.db
 Desktop.ini
-
+# Temporary and Scratch files
+scratch/
+~$*
