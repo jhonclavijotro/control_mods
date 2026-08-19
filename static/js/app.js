@@ -333,10 +333,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadAllData() {
         try {
             const [invRes, dashRes, sparesRes, logsRes] = await Promise.all([
-                fetch('/api/inverters').then(r => r.json()),
-                fetch('/api/dashboard').then(r => r.json()),
-                fetch('/api/spares').then(r => r.json()),
-                fetch('/api/logs').then(r => r.json())
+                authenticatedFetch('/api/inverters').then(r => r.json()),
+                authenticatedFetch('/api/dashboard').then(r => r.json()),
+                authenticatedFetch('/api/spares').then(r => r.json()),
+                authenticatedFetch('/api/logs').then(r => r.json())
             ]);
 
             invertersData = invRes;
@@ -674,7 +674,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renderPlantAvailabilityChart(canvasId, invIds, periodVal) {
         try {
-            const data = await fetch(`/api/inverters?period=${periodVal}`).then(r => r.json());
+            const data = await authenticatedFetch(`/api/inverters?period=${periodVal}`).then(r => r.json());
             const labels = [];
             const uptime = [];
             const downtime = [];
@@ -962,7 +962,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm(`¿Confirma eliminar definitivamente el módulo '${serialNumber}' del inventario?\nEsta acción retirará el módulo de las listas de forma permanente.`)) return;
 
         try {
-            const res = await fetch(`/api/modules/${encodeURIComponent(serialNumber)}`, {
+            const res = await authenticatedFetch(`/api/modules/${encodeURIComponent(serialNumber)}`, {
                 method: 'DELETE'
             });
 
@@ -1018,7 +1018,7 @@ document.addEventListener('DOMContentLoaded', () => {
         body.innerHTML = '<tr><td colspan="9" style="text-align:center;">Cargando catálogo...</td></tr>';
 
         try {
-            const modules = await fetch('/api/modules').then(r => r.json());
+            const modules = await authenticatedFetch('/api/modules').then(r => r.json());
             const searchTerm = document.getElementById('catalog-search-input').value.toLowerCase().trim();
 
             const filtered = modules.filter(m => {
@@ -1128,7 +1128,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (searchFilter) params.append('search', searchFilter);
 
         try {
-            const res = await fetch('/api/logs?' + params.toString());
+            const res = await authenticatedFetch('/api/logs?' + params.toString());
             if (res.ok) {
                 const freshData = await res.json();
                 if (freshData && freshData.repairs) {
@@ -1577,7 +1577,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('file', file);
 
-        const res = await fetch('/api/upload', {
+        const res = await authenticatedFetch('/api/upload', {
             method: 'POST',
             body: formData
         });
@@ -1599,7 +1599,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const uploadRes = await uploadFileIfSelected('stop-file-input');
 
-                const res = await fetch('/api/repairs/stop', {
+                const res = await authenticatedFetch('/api/repairs/stop', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1641,7 +1641,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (repairId === 0) {
                     const currentInv = ['A1','A2','B1','B2','C1','C2','D1','E1'].includes(currentTab) ? currentTab : 'A1';
-                    const res = await fetch('/api/repairs/restart-inverter', {
+                    const res = await authenticatedFetch('/api/repairs/restart-inverter', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1657,7 +1657,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     showToast(`Unidad Inversora ${currentInv} totalmente restablecida a servicio`);
                 } else {
-                    const res = await fetch('/api/repairs/restart', {
+                    const res = await authenticatedFetch('/api/repairs/restart', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1703,7 +1703,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const uploadRes = await uploadFileIfSelected('replace-file-input');
 
-                const res = await fetch('/api/replacements', {
+                const res = await authenticatedFetch('/api/replacements', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1736,7 +1736,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!serial) return;
 
             try {
-                const res = await fetch('/api/spares', {
+                const res = await authenticatedFetch('/api/spares', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ serial_number: serial })
@@ -1761,7 +1761,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!newSerial) return;
 
             try {
-                const res = await fetch(`/api/modules/${encodeURIComponent(oldSerial)}/edit-serial`, {
+                const res = await authenticatedFetch(`/api/modules/${encodeURIComponent(oldSerial)}/edit-serial`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ new_serial: newSerial })
@@ -1793,7 +1793,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const uploadRes = await uploadFileIfSelected('edit-repair-file-input');
 
-                const res = await fetch(`/api/repairs/${repairId}`, {
+                const res = await authenticatedFetch(`/api/repairs/${repairId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1828,7 +1828,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const uploadRes = await uploadFileIfSelected('edit-rep-file-input');
 
-                const res = await fetch(`/api/replacements/${repId}`, {
+                const res = await authenticatedFetch(`/api/replacements/${repId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1861,7 +1861,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const installDate = document.getElementById('edit-install-date-input').value;
 
                 try {
-                    const res = await fetch(`/api/slots/${invId}/${slotNum}/installed-at`, {
+                    const res = await authenticatedFetch(`/api/slots/${invId}/${slotNum}/installed-at`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ installed_at: installDate })
@@ -1897,7 +1897,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const nowIso = new Date().toISOString().slice(0, 16);
             try {
-                const res = await fetch('/api/repairs/restart-inverter', {
+                const res = await authenticatedFetch('/api/repairs/restart-inverter', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1931,7 +1931,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('btn-seed-reset').onclick = async () => {
             if (!confirm('¿Confirma reiniciar la base de datos a los valores iniciales de prueba?')) return;
             try {
-                await fetch('/api/seed/reset', { method: 'POST' });
+                await authenticatedFetch('/api/seed/reset', { method: 'POST' });
                 showToast('Base de datos reiniciada con datos de demostración');
                 await loadAllData();
             } catch (err) {
@@ -1945,7 +1945,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btnClean.onclick = async () => {
                 if (!confirm('¿Confirma eliminar todos los registros de paradas, reemplazos y restablecer las horas acumuladas a CERO?\n\nNOTA: Todos los números seriales que hayas registrado se CONSERVARÁN intactos.')) return;
                 try {
-                    const res = await fetch('/api/seed/clean', { method: 'POST' });
+                    const res = await authenticatedFetch('/api/seed/clean', { method: 'POST' });
                     if (!res.ok) throw new Error((await res.json()).detail);
 
                     showToast('Horas restablecidas a CERO y fallas eliminadas. Seriales conservados.');
