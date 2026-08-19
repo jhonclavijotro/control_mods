@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     container_name: solar_farm_control
     ports:
-      - "8000:8000"
+      - "8002:8000"
     volumes:
       - ./data:/app/data
     environment:
@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile
     container_name: solar_farm_stakeholder
     ports:
-      - "8001:8000"
+      - "8003:8000"
     volumes:
       - ./data:/app/data
       - ./static:/app/static
