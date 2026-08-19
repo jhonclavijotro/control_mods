@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solaris Control - Portal de Stakeholders & Salud de Planta</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js Library -->
+    <script src="/static/js/chart.min.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/styles.css?v=9.0">
+</head>
+<body class="stakeholder-body">
+
+    <!-- Header Navigation Bar -->
+    <header class="app-header stakeholder-header">
+        <div class="header-brand" id="header-brand-logo" title="Portal Ejecutivo de Stakeholders - Solaris Control">
+            <div class="logo-icon stakeholder-logo">
+                <i class="fa-solid fa-chart-pie"></i>
+            </div>
+            <div>
+                <h1>SOLARIS CONTROL <span class="badge-role">STAKEHOLDERS</span></h1>
+                <p>Supervisión Ejecutiva de Planta Solar</p>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs in Header -->
+        <nav class="stakeholder-nav-pills">
+            <button id="nav-btn-main" type="button" class="nav-pill active">
+                <i class="fa-solid fa-house"></i> Salud General
+            </button>
+            <button id="nav-btn-disponibilidad" type="button" class="nav-pill">
+                <i class="fa-solid fa-percent"></i> Disponibilidad
+            </button>
+            <button id="nav-btn-subplantas" type="button" class="nav-pill">
+                <i class="fa-solid fa-layer-group"></i> Subplantas
+            </button>
+            <button id="nav-btn-stock" type="button" class="nav-pill">
+                <i class="fa-solid fa-boxes-stacked"></i> Stock
+            </button>
+        </nav>
+
+        <div class="header-status">
+            <div class="live-status-pill">
+                <span class="pulse-dot"></span>
+                <i class="fa-solid fa-satellite-dish"></i> En Vivo
+            </div>
+            <button id="btn-export-excel" type="button" class="btn btn-success" title="Descargar Reporte Completo en Excel (.xlsx)">
+                <i class="fa-solid fa-file-excel"></i> Exportar Excel (.xlsx)
+            </button>
+            <button id="btn-theme-toggle" type="button" class="btn btn-outline" title="Cambiar Tema (Claro / Oscuro)">
+                <i class="fa-solid fa-moon" id="theme-toggle-icon"></i> <span id="theme-toggle-text">Tema Oscuro</span>
+            </button>
+            <div id="user-profile-badge" class="user-profile-badge" style="display: none;">
+                <i class="fa-solid fa-circle-user"></i>
+                <span id="user-display-name">---</span>
+                <span id="user-role-badge" class="role-badge">---</span>
+                <button id="btn-logout" type="button" class="btn-icon-logout" title="Cerrar Sesión">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container">
+
+        <!-- ====================================================================
+             TAB 1: PAGINA PRINCIPAL (SALUD GENERAL & 3 TARJETAS INTERACTIVAS)
+             ==================================================================== -->
+        <div class="stakeholder-tab-pane active" id="tab-exec-main">
+            
+            <section class="stakeholder-hero-grid">
+                
+                <!-- Overall Plant Health Circular Donut Card -->
+                <div class="glass-card plant-health-card">
+                    <div class="card-header-clean">
+                        <h3><i class="fa-solid fa-heart-pulse text-primary"></i> Salud General de la Planta</h3>
+                        <span id="health-status-badge" class="status-badge badge-success">Calculando...</span>
+                    </div>
+                    <div class="health-gauge-wrapper">
+                        <div class="chart-container-donut">
+                            <canvas id="chart-plant-health"></canvas>
+                            <div class="donut-center-text">
+                                <span id="health-percentage-val">--%</span>
+                                <small>Módulos Activos</small>
+                            </div>
+                        </div>
+                        <div class="health-summary-details">
+                            <div class="detail-row">
+                                <span class="dot-indicator green"></span>
+                                <span>Módulos Operativos:</span>
+                                <strong id="health-op-count">-- / --</strong>
+                            </div>
+                            <div class="detail-row">
+                                <span class="dot-indicator red"></span>
+                                <span>En Reparación:</span>
+                                <strong id="health-repair-count">--</strong>
+                            </div>
+                            <div class="detail-row">
+                                <span class="dot-indicator cyan"></span>
+                                <span>Reserva en Stock:</span>
+                                <strong id="health-stock-count">--</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3 Clickable KPI Cards -->
+                <div class="executive-kpi-column">
+                    <!-- 1. Disponibilidad KPI Card -->
+                    <div class="kpi-card success clickable-card" id="card-kpi-disponibilidad" role="button" tabindex="0" title="Ver detalle de Módulos Instalados y Disponibilidad">
+                        <div class="kpi-icon"><i class="fa-solid fa-percent"></i></div>
+                        <div class="kpi-content">
+                            <div class="kpi-card-header-flex">
+                                <span class="kpi-label">Disponibilidad Promedio</span>
+                                <span class="click-hint"><i class="fa-solid fa-arrow-right"></i> Ver Módulos</span>
+                            </div>
+                            <h3 id="exec-kpi-availability">--%</h3>
+                            <span class="kpi-sub">Clic para ver los 46 módulos instalados</span>
+                        </div>
+                    </div>
+
+                    <!-- 2. Subplantas KPI Card -->
+                    <div class="kpi-card info clickable-card" id="card-kpi-subplantas" role="button" tabindex="0" title="Ver análisis de Salud por Subplantas">
+                        <div class="kpi-icon"><i class="fa-solid fa-solar-panel"></i></div>
+                        <div class="kpi-content">
+                            <div class="kpi-card-header-flex">
+                                <span class="kpi-label">Subplantas Palmaseca</span>
+                                <span class="click-hint"><i class="fa-solid fa-arrow-right"></i> Ver Diagramas</span>
+                            </div>
+                            <h3 id="exec-kpi-subplants">Palmaseca 1 & 2</h3>
+                            <span class="kpi-sub">Clic para ver dona por inversor y diagrama por módulo</span>
+                        </div>
+                    </div>
+
+                    <!-- 3. Stock KPI Card -->
+                    <div class="kpi-card purple clickable-card" id="card-kpi-stock" role="button" tabindex="0" title="Ver Inventario de Módulos en Stock">
+                        <div class="kpi-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
+                        <div class="kpi-content">
+                            <div class="kpi-card-header-flex">
+                                <span class="kpi-label">Stock de Contingencia</span>
+                                <span class="click-hint"><i class="fa-solid fa-arrow-right"></i> Ver Inventario</span>
+                            </div>
+                            <h3 id="exec-kpi-spares">-- Módulos</h3>
+                            <span class="kpi-sub">Clic para ver unidades de reserva disponibles</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+
+        <!-- ====================================================================
+             TAB 2: VISTA DE DISPONIBILIDAD & MODULOS INSTALADOS
+             ==================================================================== -->
+        <div class="stakeholder-tab-pane" id="tab-exec-disponibilidad">
+            <div class="glass-card section-card full-bleed-card">
+                <div class="pane-header-flex mb-4">
+                    <div>
+                        <h2><i class="fa-solid fa-percent text-primary"></i> Módulos Instalados & Disponibilidad Operacional</h2>
+                        <p>Desglose completo y espacioso de los 46 módulos de potencia divididos por subplanta e inversor.</p>
+                    </div>
+                    <div class="filter-controls-group">
+                        <div class="period-filter-wrapper">
+                            <label for="select-period-disponibilidad"><i class="fa-regular fa-calendar"></i> Período:</label>
+                            <select id="select-period-disponibilidad" class="form-control-select">
+                                <option value="month" selected>Mes Acumulado (Actual)</option>
+                                <option value="all_time">Histórico Global (Desde 13 Ago 2026)</option>
+                                <option value="last_30">Últimos 30 Días</option>
+                                <option value="year">Año en Curso</option>
+                            </select>
+                        </div>
+                        <button type="button" class="btn btn-outline btn-back-main" title="Volver al inicio">
+                            <i class="fa-solid fa-arrow-left"></i> Volver a Salud General
+                        </button>
+                    </div>
+                </div>
+
+                <!-- SUBPLANTA PALMASECA 1 TABLE SECTION -->
+                <div class="subplant-table-container mb-5">
+                    <div class="subplant-section-header p1-header">
+                        <h3><i class="fa-solid fa-solar-panel text-success"></i> Subplanta Palmaseca 1 (24 Módulos)</h3>
+                        <span class="badge-subplant p1-badge">Inversores A1, A2, B1, B2</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table-custom table-spacious" id="table-modules-p1">
+                            <thead>
+                                <tr>
+                                    <th>Número Serial</th>
+                                    <th>Inversor Asociado</th>
+                                    <th>Slot</th>
+                                    <th>Estado</th>
+                                    <th>Fecha de Instalación</th>
+                                    <th>Tiempo de Operación</th>
+                                    <th>% Fuera de Operación</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-modules-p1">
+                                <tr><td colspan="7" class="text-center py-4"><i class="fa-solid fa-spinner fa-spin"></i> Cargando módulos de Palmaseca 1...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SUBPLANTA PALMASECA 2 TABLE SECTION -->
+                <div class="subplant-table-container">
+                    <div class="subplant-section-header p2-header">
+                        <h3><i class="fa-solid fa-solar-panel text-info"></i> Subplanta Palmaseca 2 (22 Módulos)</h3>
+                        <span class="badge-subplant p2-badge">Inversores C1, C2, D1, E1</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table-custom table-spacious" id="table-modules-p2">
+                            <thead>
+                                <tr>
+                                    <th>Número Serial</th>
+                                    <th>Inversor Asociado</th>
+                                    <th>Slot</th>
+                                    <th>Estado</th>
+                                    <th>Fecha de Instalación</th>
+                                    <th>Tiempo de Operación</th>
+                                    <th>% Fuera de Operación</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-modules-p2">
+                                <tr><td colspan="7" class="text-center py-4"><i class="fa-solid fa-spinner fa-spin"></i> Cargando módulos de Palmaseca 2...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+
+        <!-- ====================================================================
+             TAB 3: VISTA DE SUBPLANTAS (DONAS POR INVERSOR & BARRAS POR MODULO)
+             ==================================================================== -->
+        <div class="stakeholder-tab-pane" id="tab-exec-subplantas">
+            
+            <div class="subplant-header-nav">
+                <div>
+                    <h2><i class="fa-solid fa-layer-group text-primary"></i> Análisis de Salud por Subplantas</h2>
+                    <p>Diagramas de salud por inversor y disponibilidad detallada por módulo de potencia instalado.</p>
+                </div>
+                <button type="button" class="btn btn-outline btn-back-main" title="Volver al inicio">
+                    <i class="fa-solid fa-arrow-left"></i> Volver a Salud General
+                </button>
+            </div>
+
+            <!-- SECCIÓN SUPERIOR: SUBPLANTA PALMASECA 1 -->
+            <div class="glass-card subplant-detail-card mb-5">
+                <div class="subplant-card-title mb-3">
+                    <div>
+                        <h3><i class="fa-solid fa-solar-panel text-success"></i> Subplanta Palmaseca 1</h3>
+                        <p class="subplant-subtitle">Inversores A1, A2, B1, B2 (24 Módulos de Potencia)</p>
+                    </div>
+                    <div class="subplant-badge-group">
+                        <span id="p1-op-badge" class="badge-subplant p1-badge">Calculando...</span>
+                        <span id="p1-health-badge-detail" class="status-badge badge-success">--% Salud</span>
+                    </div>
+                </div>
+
+                <!-- 1. DIAGRAMAS DE DONA / TORTA POR INVERSOR (PALMASECA 1) -->
+                <div class="inverter-donuts-title">
+                    <h4><i class="fa-solid fa-chart-pie text-muted"></i> Salud por Inversor (Palmaseca 1)</h4>
+                </div>
+                <div class="inverters-donuts-grid" id="donuts-grid-p1">
+                    <div class="inverter-donut-box">
+                        <h5>Inversor A1</h5>
+                        <div class="mini-donut-container"><canvas id="donut-inv-A1"></canvas></div>
+                        <span class="mini-donut-label" id="label-inv-A1">--%</span>
+                        <small class="mini-donut-sub" id="sub-inv-A1">-- / -- Operativos</small>
+                    </div>
+                    <div class="inverter-donut-box">
+                        <h5>Inversor A2</h5>
+                        <div class="mini-donut-container"><canvas id="donut-inv-A2"></canvas></div>
+                        <span class="mini-donut-label" id="label-inv-A2">--%</span>
+                        <small class="mini-donut-sub" id="sub-inv-A2">-- / -- Operativos</small>
+                    </div>
+                    <div class="inverter-donut-box">
+                        <h5>Inversor B1</h5>
+                        <div class="mini-donut-container"><canvas id="donut-inv-B1"></canvas></div>
+                        <span class="mini-donut-label" id="label-inv-B1">--%</span>
+                        <small class="mini-donut-sub" id="sub-inv-B1">-- / -- Operativos</small>
+                    </div>
+                    <div class="inverter-donut-box">
+                        <h5>Inversor B2</h5>
+                        <div class="mini-donut-container"><canvas id="donut-inv-B2"></canvas></div>
+                        <span class="mini-donut-label" id="label-inv-B2">--%</span>
+                        <small class="mini-donut-sub" id="sub-inv-B2">-- / -- Operativos</small>
+                    </div>
+                </div>
+
+                <!-- 2. DIAGRAMA DE BARRAS POR MÓDULO (PALMASECA 1) -->
+                <div class="module-bars-title mt-4">
+                    <h4><i class="fa-solid fa-chart-column text-muted"></i> Disponibilidad por Módulo de Potencia (Palmaseca 1)</h4>
+                </div>
+                <div class="chart-canvas-container" style="position: relative; height: 320px; width: 100%;">
+                    <canvas id="chart-modules-p1"></canvas>
+                </div>
+            </div>
+
+            <!-- SECCIÓN INFERIOR: SUBPLANTA PALMASECA 2 -->
+            <div class="glass-card subplant-detail-card">
+                <div class="subplant-card-title mb-3">
+                    <div>
+                        <h3><i class="fa-solid fa-solar-panel text-info"></i> Subplanta Palmaseca 2</h3>
+                        <p class="subplant-subtitle">Inversores C1, C2, D1, E1 (22 Módulos de Potencia)</p>
+                    </div>
+                    <div class="subplant-badge-group">
+                        <span id="p2-op-badge" class="badge-subplant p2-badge">Calculando...</span>
+                        <span id="p2-health-badge-detail" class="status-badge badge-success">--% Salud</span>
+                    </div>
+                </div>
+
+                <!-- 1. DIAGRAMAS DE DONA / TORTA POR INVERSOR (PALMASECA 2) -->
+                <div class="inverter-donuts-title">
+                    <h4><i class="fa-solid fa-chart-pie text-muted"></i> Salud por Inversor (Palmaseca 2)</h4>
+                </div>
+                <div class="inverters-donuts-grid" id="donuts-grid-p2">
+                    <div class="inverter-donut-box">
+                        <h5>Inversor C1</h5>
+                        <div class="mini-donut-container"><canvas id="donut-inv-C1"></canvas></div>
+                        <span class="mini-donut-label" id="label-inv-C1">--%</span>
+                        <small class="mini-donut-sub" id="sub-inv-C1">-- / -- Operativos</small>
+                    </div>
+                    <div class="inverter-donut-box">
+                        <h5>Inversor C2</h5>
+                        <div class="mini-donut-container"><canvas id="donut-inv-C2"></canvas></div>
+                        <span class="mini-donut-label" id="label-inv-C2">--%</span>
+                        <small class="mini-donut-sub" id="sub-inv-C2">-- / -- Operativos</small>
+                    </div>
+                    <div class="inverter-donut-box">
+                        <h5>Inversor D1</h5>
+                        <div class="mini-donut-container"><canvas id="donut-inv-D1"></canvas></div>
+                        <span class="mini-donut-label" id="label-inv-D1">--%</span>
+                        <small class="mini-donut-sub" id="sub-inv-D1">-- / -- Operativos</small>
+                    </div>
+                    <div class="inverter-donut-box">
+                        <h5>Inversor E1</h5>
+                        <div class="mini-donut-container"><canvas id="donut-inv-E1"></canvas></div>
+                        <span class="mini-donut-label" id="label-inv-E1">--%</span>
+                        <small class="mini-donut-sub" id="sub-inv-E1">-- / -- Operativos</small>
+                    </div>
+                </div>
+
+                <!-- 2. DIAGRAMA DE BARRAS POR MÓDULO (PALMASECA 2) -->
+                <div class="module-bars-title mt-4">
+                    <h4><i class="fa-solid fa-chart-column text-muted"></i> Disponibilidad por Módulo de Potencia (Palmaseca 2)</h4>
+                </div>
+                <div class="chart-canvas-container" style="position: relative; height: 320px; width: 100%;">
+                    <canvas id="chart-modules-p2"></canvas>
+                </div>
+            </div>
+
+        </div>
+
+
+        <!-- ====================================================================
+             TAB 4: VISTA DE STOCK (MODULOS DE RESERVA)
+             ==================================================================== -->
+        <div class="stakeholder-tab-pane" id="tab-exec-stock">
+            <div class="glass-card section-card full-bleed-card">
+                <div class="pane-header-flex mb-4">
+                    <div>
+                        <h2><i class="fa-solid fa-boxes-stacked text-purple"></i> Inventario de Módulos de Potencia en Stock</h2>
+                        <p>Unidades de respaldo listas para rotación y sustitución en contingencias.</p>
+                    </div>
+                    <button type="button" class="btn btn-outline btn-back-main" title="Volver al inicio">
+                        <i class="fa-solid fa-arrow-left"></i> Volver a Salud General
+                    </button>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table-custom table-spacious" id="table-stock-modules">
+                        <thead>
+                            <tr>
+                                <th>Número Serial</th>
+                                <th>Estado</th>
+                                <th>Ubicación Actual</th>
+                                <th>Fecha de Registro</th>
+                                <th>Reparaciones Históricas</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-stock-modules">
+                            <tr>
+                                <td colspan="5" class="text-center py-4"><i class="fa-solid fa-spinner fa-spin"></i> Cargando módulos de stock...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer text-center">
+        <p>&copy; 2026 Solaris Control • Portal de Supervisión Ejecutiva para Stakeholders.</p>
+    </footer>
+
+    <!-- Modal Obligatorio de Inicio de Sesión / Registro -->
+    <div class="login-fullscreen-overlay" id="modal-mandatory-login" style="display: flex;">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-logo-icon"><i class="fa-solid fa-sun-plant-wilt"></i></div>
+                <h2>SOLARIS CONTROL</h2>
+                <p id="login-subheading">Ingreso al Portal Ejecutivo de Stakeholders</p>
+            </div>
+
+            <!-- Formulario de Login -->
+            <form id="form-mandatory-login">
+                <div id="login-error-msg" class="login-error-alert" style="display: none;"></div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-user"></i> Nombre de Usuario</label>
+                    <input type="text" id="login-username" class="form-control" required placeholder="ej: stakeholder" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-lock"></i> Contraseña</label>
+                    <input type="password" id="login-password" class="form-control" required placeholder="••••••••" autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block btn-login-submit" id="btn-login-submit">
+                    <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión
+                </button>
+                <div class="login-toggle-link mt-3 text-center">
+                    <small>¿No tienes cuenta? <a href="#" id="link-show-register" style="color: #60a5fa; text-decoration: underline;">Registrarse como Stakeholder</a></small>
+                </div>
+            </form>
+
+            <!-- Formulario de Registro de Stakeholder -->
+            <form id="form-mandatory-register" style="display: none;">
+                <div id="register-error-msg" class="login-error-alert" style="display: none;"></div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-id-card"></i> Nombre Completo</label>
+                    <input type="text" id="reg-fullname" class="form-control" required placeholder="ej: María Pérez">
+                </div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-user"></i> Nombre de Usuario</label>
+                    <input type="text" id="reg-username" class="form-control" required placeholder="ej: mperez">
+                </div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-lock"></i> Contraseña</label>
+                    <input type="password" id="reg-password" class="form-control" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn btn-success btn-block btn-login-submit" id="btn-register-submit">
+                    <i class="fa-solid fa-user-plus"></i> Crear Cuenta de Stakeholder
+                </button>
+                <div class="login-toggle-link mt-3 text-center">
+                    <small>¿Ya tienes cuenta? <a href="#" id="link-show-login" style="color: #60a5fa; text-decoration: underline;">Volver a Iniciar Sesión</a></small>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification Overlay -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Stakeholder JavaScript Logic -->
+    <script src="/static/js/stakeholder.js?v=4.0"></script>
+</body>
+</html>

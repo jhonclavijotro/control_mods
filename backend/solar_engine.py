@@ -1,8 +1,11 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 
 SOLAR_START_HOUR = 7  # 7:00 AM
 SOLAR_END_HOUR = 18   # 6:00 PM
 DAILY_SOLAR_HOURS = SOLAR_END_HOUR - SOLAR_START_HOUR  # 11.0 hours
+
+def get_now_utc() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 def calculate_solar_hours_in_range(start_dt: datetime, end_dt: datetime) -> float:
     """
@@ -37,7 +40,7 @@ def calculate_module_metrics(installed_at: datetime, repair_logs, current_time: 
     availability percentage, and MTBF for a given power module over a specified period window.
     """
     if current_time is None:
-        current_time = datetime.utcnow()
+        current_time = get_now_utc()
 
     # Determine baseline evaluation window start date.
     if not installed_at:

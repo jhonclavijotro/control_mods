@@ -11,6 +11,8 @@ ENV/
 data/*.db
 data/*.sqlite
 data/*.sqlite3
+data/uploads/*
+!data/uploads/.gitkeep
 
 # IDE, Environment and OS
 .env

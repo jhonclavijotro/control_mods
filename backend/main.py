@@ -1,27 +1,50 @@
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from pydantic import BaseModel, Field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import shutil
 import uuid
 from typing import Optional, List
 
+import hashlib
+import secrets
+
 try:
     from .database import engine, Base, get_db, SessionLocal, auto_migrate_db_schema
-    from .models import Inverter, ModuleSlot, PowerModule, RepairLog, ReplacementLog
+    from .models import Inverter, ModuleSlot, PowerModule, RepairLog, ReplacementLog, User
     from .solar_engine import calculate_module_metrics
 except ImportError:
     import sys
     from pathlib import Path
     sys.path.append(str(Path(__file__).resolve().parent))
     from database import engine, Base, get_db, SessionLocal, auto_migrate_db_schema
-    from models import Inverter, ModuleSlot, PowerModule, RepairLog, ReplacementLog
+    from models import Inverter, ModuleSlot, PowerModule, RepairLog, ReplacementLog, User
     from solar_engine import calculate_module_metrics
+
+def get_utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+# Password Hashing and Session Verification Helpers
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
+    return f"{salt}${key.hex()}"
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        salt, key_hex = password_hash.split("$")
+        recalculated = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
+        return secrets.compare_digest(recalculated.hex(), key_hex)
+    except Exception:
+        return False
+
+# In-memory session token mapping: token -> user dict
+SESSIONS = {}
 
 # Create Database tables and auto-migrate schema
 Base.metadata.create_all(bind=engine)
@@ -45,6 +68,8 @@ app = FastAPI(
 @app.middleware("http")
 async def read_only_middleware(request: Request, call_next):
     if READ_ONLY_MODE and request.method in ["POST", "PUT", "DELETE", "PATCH"]:
+        if request.url.path in ["/api/auth/login", "/api/auth/logout", "/api/auth/register"]:
+            return await call_next(request)
         return JSONResponse(
             status_code=403,
             content={"detail": "Modo de solo lectura activado (Stakeholders). Las operaciones de modificación están restringidas en este entorno."}
@@ -52,16 +77,20 @@ async def read_only_middleware(request: Request, call_next):
     response = await call_next(request)
     return response
 
-# Enable CORS for local development
+# Configure CORS safely
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS != ["*"] else ["*"],
+    allow_credentials=False if ALLOWED_ORIGINS == ["*"] else True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".txt"}
+MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB limit
 
 @app.get("/api/config")
 def get_app_config():
@@ -77,13 +106,24 @@ async def upload_attachment(file: UploadFile = File(...)):
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="Ningún archivo seleccionado.")
 
-    ext = os.path.splitext(file.filename)[1]
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_ATTACHMENT_EXTENSIONS:
+        allowed_str = ", ".join(sorted(ALLOWED_ATTACHMENT_EXTENSIONS))
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Tipo de archivo no permitido: '{ext}'. Formatos soportados: {allowed_str}"
+        )
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="El archivo excede el tamaño máximo permitido (10 MB).")
+
     safe_basename = os.path.basename(file.filename)
     unique_name = f"{uuid.uuid4().hex}_{safe_basename}"
     dest_path = os.path.join(UPLOAD_DIR, unique_name)
 
     with open(dest_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(content)
 
     web_url = f"/uploads/{unique_name}"
     return {
@@ -92,6 +132,21 @@ async def upload_attachment(file: UploadFile = File(...)):
     }
 
 # Pydantic Request Models
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class RegisterStakeholderRequest(BaseModel):
+    username: str
+    password: str
+    full_name: str
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    full_name: str
+    role: str = "operator"
+
 class StopRepairRequest(BaseModel):
     inverter_id: str
     slot_number: int
@@ -218,7 +273,7 @@ def seed_database_if_needed(db: Session):
         ("E1", "Unidad Inversora E1", 4),
     ]
 
-    base_time = datetime.utcnow() - timedelta(days=30)
+    base_time = get_utc_now() - timedelta(days=30)
     serials_map = load_initial_serials()
 
     for inv_id, inv_name, max_mods in inverter_configs:
@@ -263,10 +318,38 @@ def seed_database_if_needed(db: Session):
 
     db.commit()
 
+def seed_default_users_if_needed(db: Session):
+    admin_user = db.query(User).filter(User.username == "admin").first()
+    if not admin_user:
+        admin_user = User(
+            username="admin",
+            password_hash=hash_password("SolarisAdmin2026!"),
+            full_name="Administrador del Sistema",
+            role="admin",
+            created_at=get_utc_now(),
+            is_active=True
+        )
+        db.add(admin_user)
+
+    stakeholder_user = db.query(User).filter(User.username == "stakeholder").first()
+    if not stakeholder_user:
+        stakeholder_user = User(
+            username="stakeholder",
+            password_hash=hash_password("SolarisViewer2026!"),
+            full_name="Usuario Stakeholder",
+            role="stakeholder",
+            created_at=get_utc_now(),
+            is_active=True
+        )
+        db.add(stakeholder_user)
+
+    db.commit()
+
 @app.on_event("startup")
 def startup_event():
     db = SessionLocal()
     try:
+        seed_default_users_if_needed(db)
         seed_database_if_needed(db)
     finally:
         db.close()
@@ -279,7 +362,7 @@ def get_inverters(period: str = "month", db: Session = Depends(get_db)):
     inverters = db.query(Inverter).all()
     result = []
     
-    now = datetime.utcnow()
+    now = get_utc_now()
     baseline_date = datetime(2026, 8, 13, 0, 0, 0)
 
     if period == "all_time":
@@ -340,7 +423,7 @@ def get_inverter_detail(inverter_id: str, db: Session = Depends(get_db)):
     if not inv:
         raise HTTPException(status_code=404, detail="Unidad Inversora no encontrada")
 
-    now = datetime.utcnow()
+    now = get_utc_now()
     slots_data = []
     for slot in inv.slots:
         pm = db.query(PowerModule).filter(PowerModule.serial_number == slot.current_serial).first()
@@ -380,7 +463,7 @@ def get_inverter_detail(inverter_id: str, db: Session = Depends(get_db)):
 @app.get("/api/dashboard")
 def get_dashboard_summary(db: Session = Depends(get_db)):
     """Get global summary stats for the solar farm."""
-    total_slots = 46  # 7 * 6 + 4
+    total_slots = db.query(ModuleSlot).count() or 46
     all_pms = db.query(PowerModule).filter(PowerModule.status != "spare", PowerModule.status != "retired").all()
     
     # Active open repairs override status
@@ -392,7 +475,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     spare_count = db.query(PowerModule).filter(PowerModule.status == "spare").count()
 
     # Calculate total solar operating hours farm-wide
-    now = datetime.utcnow()
+    now = get_utc_now()
     slots = db.query(ModuleSlot).all()
     total_farm_hours = 0.0
     for slot in slots:
@@ -660,7 +743,7 @@ def add_spare(req: AddSpareModuleRequest, db: Session = Depends(get_db)):
         current_inverter_id=None,
         current_slot_number=None,
         status="spare",
-        registered_at=datetime.utcnow(),
+        registered_at=get_utc_now(),
         total_repairs=0
     )
     db.add(sp)
@@ -784,21 +867,31 @@ class EditReplacementLogRequest(BaseModel):
 
 @app.get("/api/modules")
 def get_all_modules(db: Session = Depends(get_db)):
-    """List all power modules in system with their status and metrics."""
+    """List all power modules in system with their status and metrics (batch queries optimized)."""
     modules = db.query(PowerModule).all()
-    now = datetime.utcnow()
+    now = get_utc_now()
+
+    # Pre-fetch slots into map: serial -> slot
+    slots = db.query(ModuleSlot).all()
+    slots_map = {s.current_serial: s for s in slots if s.current_serial}
+
+    # Pre-fetch all repair logs grouped by serial_number
+    all_repair_logs = db.query(RepairLog).all()
+    repairs_map = {}
+    active_repairs_map = {}
+    for r in all_repair_logs:
+        repairs_map.setdefault(r.serial_number, []).append(r)
+        if r.status == "open":
+            active_repairs_map[r.serial_number] = r
+
     result = []
     for pm in modules:
-        slot = db.query(ModuleSlot).filter(ModuleSlot.current_serial == pm.serial_number).first()
-        repair_logs = db.query(RepairLog).filter(RepairLog.serial_number == pm.serial_number).all()
+        slot = slots_map.get(pm.serial_number)
+        repair_logs = repairs_map.get(pm.serial_number, [])
         installed_at = slot.installed_at if slot else pm.registered_at
         metrics = calculate_module_metrics(installed_at, repair_logs, now)
 
-        active_repair = db.query(RepairLog).filter(
-            RepairLog.serial_number == pm.serial_number,
-            RepairLog.status == "open"
-        ).first()
-
+        active_repair = active_repairs_map.get(pm.serial_number)
         effective_status = "in_repair" if active_repair else pm.status
 
         result.append({
@@ -972,10 +1065,13 @@ def edit_replacement_log(replacement_id: int, req: EditReplacementLogRequest, db
 @app.post("/api/seed/clean")
 def clean_database_for_production(db: Session = Depends(get_db)):
     """Clear all repairs, replacements, and reset all operating hours to 0 while keeping current serial numbers intact."""
+    if READ_ONLY_MODE:
+        raise HTTPException(status_code=403, detail="Operación restringida en Modo Solo Lectura.")
+
     db.query(RepairLog).delete()
     db.query(ReplacementLog).delete()
 
-    now = datetime.utcnow()
+    now = get_utc_now()
 
     # Reset slots installed_at to now so operating hours start at 0.0 hrs
     slots = db.query(ModuleSlot).all()
@@ -996,6 +1092,9 @@ def clean_database_for_production(db: Session = Depends(get_db)):
 @app.post("/api/seed/reset")
 def reset_database(db: Session = Depends(get_db)):
     """Reset and re-seed database with default solar farm configuration."""
+    if READ_ONLY_MODE:
+        raise HTTPException(status_code=403, detail="Operación restringida en Modo Solo Lectura.")
+
     db.query(RepairLog).delete()
     db.query(ReplacementLog).delete()
     db.query(ModuleSlot).delete()
@@ -1003,8 +1102,357 @@ def reset_database(db: Session = Depends(get_db)):
     db.query(Inverter).delete()
     db.commit()
 
+    seed_default_users_if_needed(db)
     seed_database_if_needed(db)
     return {"message": "Base de datos reiniciada con datos por defecto de la granja solar."}
+
+@app.get("/api/export/excel")
+def export_modules_excel(db: Session = Depends(get_db)):
+    """Export complete power modules list (installed & stock) as Excel-compatible CSV file."""
+    import csv
+    import io
+
+    now = get_utc_now()
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=';')
+
+    writer.writerow([
+        "Serial",
+        "Ubicación / Estado",
+        "Día de Instalación",
+        "Día de Retiro",
+        "Tiempo Total de Operación (hrs)",
+        "Porcentaje de Inoperancia (%)",
+        "Número de Revisiones"
+    ])
+
+    modules = db.query(PowerModule).all()
+    for pm in modules:
+        slot = db.query(ModuleSlot).filter(ModuleSlot.current_serial == pm.serial_number).first()
+        repair_logs = db.query(RepairLog).filter(RepairLog.serial_number == pm.serial_number).all()
+
+        if slot:
+            inv_id = slot.inverter_id
+            location = f"Inversor {inv_id} - Slot {slot.slot_number}"
+            install_date = slot.installed_at.strftime("%d/%m/%Y %I:%M %p") if slot.installed_at else "13/08/2026 07:00 AM"
+            retired_date = "Presente"
+            metrics = calculate_module_metrics(slot.installed_at, repair_logs, now)
+            op_hours = f"{metrics['net_operating_hours']:.1f}"
+            inop_pct = f"{100.0 - metrics['uptime_percent']:.1f}%"
+            revisions = len(repair_logs)
+        else:
+            location = "Almacén Central (Stock)" if pm.status == "spare" else "Retirado"
+            install_date = "N/A (Stock)" if pm.status == "spare" else (pm.registered_at.strftime("%d/%m/%Y") if pm.registered_at else "N/A")
+            retired_date = "Presente" if pm.status == "spare" else "Retirado"
+            op_hours = "0.0"
+            inop_pct = "0.0%"
+            revisions = pm.total_repairs or len(repair_logs)
+
+        writer.writerow([
+            pm.serial_number,
+            location,
+            install_date,
+            retired_date,
+            op_hours,
+            inop_pct,
+            revisions
+        ])
+
+    csv_text = output.getvalue()
+    return Response(
+        content=csv_text.encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="Reporte_Modulos_Solaris_Control.csv"'}
+    )
+
+# Authentication and User Management Endpoints
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == req.username.strip().lower()).first()
+    if not user or not user.is_active or not verify_password(req.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos.")
+
+    # Restrict login on public Ngrok / Stakeholder instance (READ_ONLY_MODE=true) to stakeholder role only
+    if READ_ONLY_MODE and user.role != "stakeholder":
+        raise HTTPException(
+            status_code=403, 
+            detail="Acceso restringido: En el portal público de Stakeholders únicamente se permite el ingreso a usuarios con rol Stakeholder."
+        )
+
+    token = secrets.token_hex(32)
+    user_info = {
+        "id": user.id,
+        "username": user.username,
+        "full_name": user.full_name,
+        "role": user.role
+    }
+    SESSIONS[token] = user_info
+
+    return {
+        "message": "Inicio de sesión exitoso",
+        "token": token,
+        "user": user_info
+    }
+
+@app.post("/api/auth/register")
+def register_stakeholder(req: RegisterStakeholderRequest, db: Session = Depends(get_db)):
+    username_clean = req.username.strip().lower()
+    if not username_clean or len(username_clean) < 3:
+        raise HTTPException(status_code=400, detail="El nombre de usuario debe tener al menos 3 caracteres.")
+
+    if len(req.password.strip()) < 4:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 4 caracteres.")
+
+    existing = db.query(User).filter(User.username == username_clean).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"El nombre de usuario '{username_clean}' ya se encuentra registrado.")
+
+    new_user = User(
+        username=username_clean,
+        password_hash=hash_password(req.password.strip()),
+        full_name=req.full_name.strip() or username_clean,
+        role="stakeholder",
+        created_at=get_utc_now(),
+        is_active=True
+    )
+    db.add(new_user)
+    db.commit()
+
+    # Auto login upon registration
+    token = secrets.token_hex(32)
+    user_info = {
+        "id": new_user.id,
+        "username": new_user.username,
+        "full_name": new_user.full_name,
+        "role": new_user.role
+    }
+    SESSIONS[token] = user_info
+
+    return {
+        "message": "Registro de Stakeholder exitoso",
+        "token": token,
+        "user": user_info
+    }
+
+@app.post("/api/auth/logout")
+def logout(request: Request):
+    auth_header = request.headers.get("Authorization") or ""
+    token = auth_header.replace("Bearer ", "").strip()
+    if token in SESSIONS:
+        del SESSIONS[token]
+    return {"message": "Sesión cerrada exitosamente."}
+
+@app.get("/api/auth/me")
+def get_current_user_profile(request: Request):
+    auth_header = request.headers.get("Authorization") or ""
+    token = auth_header.replace("Bearer ", "").strip()
+    if not token or token not in SESSIONS:
+        raise HTTPException(status_code=401, detail="Sesión no válida o expirada.")
+    return SESSIONS[token]
+
+@app.get("/api/users")
+def get_users(request: Request, db: Session = Depends(get_db)):
+    auth_header = request.headers.get("Authorization") or ""
+    token = auth_header.replace("Bearer ", "").strip()
+    user_info = SESSIONS.get(token)
+    if not user_info or user_info.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acceso permitido únicamente para administradores.")
+
+    users = db.query(User).all()
+    return [{
+        "id": u.id,
+        "username": u.username,
+        "full_name": u.full_name,
+        "role": u.role,
+        "is_active": u.is_active,
+        "created_at": u.created_at.isoformat() if u.created_at else None
+    } for u in users]
+
+@app.post("/api/users")
+def create_user(req: CreateUserRequest, request: Request, db: Session = Depends(get_db)):
+    auth_header = request.headers.get("Authorization") or ""
+    token = auth_header.replace("Bearer ", "").strip()
+    user_info = SESSIONS.get(token)
+    if not user_info or user_info.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acceso permitido únicamente para administradores.")
+
+    username_clean = req.username.strip().lower()
+    if not username_clean or len(username_clean) < 3:
+        raise HTTPException(status_code=400, detail="El nombre de usuario debe tener al menos 3 caracteres.")
+
+    existing = db.query(User).filter(User.username == username_clean).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"El nombre de usuario '{username_clean}' ya está registrado.")
+
+    new_user = User(
+        username=username_clean,
+        password_hash=hash_password(req.password.strip()),
+        full_name=req.full_name.strip(),
+        role=req.role.lower() if req.role in ["admin", "operator", "stakeholder"] else "operator",
+        created_at=get_utc_now(),
+        is_active=True
+    )
+    db.add(new_user)
+    db.commit()
+    return {"message": f"Usuario '{username_clean}' creado exitosamente."}
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
+    auth_header = request.headers.get("Authorization") or ""
+    token = auth_header.replace("Bearer ", "").strip()
+    user_info = SESSIONS.get(token)
+    if not user_info or user_info.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acceso permitido únicamente para administradores.")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+    if user.username == "admin" or user.id == user_info.get("id"):
+        raise HTTPException(status_code=400, detail="No es posible eliminar la cuenta del administrador actual.")
+
+    db.delete(user)
+    db.commit()
+    return {"message": f"Usuario '{user.username}' eliminado exitosamente."}
+
+@app.get("/api/export/xlsx")
+def export_modules_xlsx(db: Session = Depends(get_db)):
+    """Export complete solar farm data (modules, repairs, replacements) as a multi-sheet Excel .xlsx file."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    import io
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    title_font = Font(name="Calibri", size=14, bold=True, color="0F172A")
+    border_side = Side(style="thin", color="CBD5E1")
+    thin_border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
+
+    # Sheet 1: Módulos de Potencia
+    ws1 = wb.create_sheet(title="Módulos de Potencia")
+    ws1.append(["SOLARIS CONTROL - REPORTES DE MÓDULOS DE POTENCIA"])
+    ws1.cell(row=1, column=1).font = title_font
+    ws1.append([])
+
+    headers_ws1 = [
+        "Serial Number", "Ubicación / Estado", "Fecha Instalación", 
+        "Horas Potenciales", "Horas Inoperancia", "Horas Operación Neta", 
+        "Disponibilidad (%)", "MTBF (hrs)", "Total Revisiones"
+    ]
+    ws1.append(headers_ws1)
+
+    now = get_utc_now()
+    modules = db.query(PowerModule).all()
+    for pm in modules:
+        slot = db.query(ModuleSlot).filter(ModuleSlot.current_serial == pm.serial_number).first()
+        repair_logs = db.query(RepairLog).filter(RepairLog.serial_number == pm.serial_number).all()
+
+        if slot:
+            location = f"Inversor {slot.inverter_id} - Slot {slot.slot_number}"
+            install_date = slot.installed_at.strftime("%d/%m/%Y %H:%M") if slot.installed_at else "N/A"
+            metrics = calculate_module_metrics(slot.installed_at, repair_logs, now)
+        else:
+            location = "Almacén Central (Stock)" if pm.status == "spare" else "Retirado"
+            install_date = "N/A (Stock)" if pm.status == "spare" else (pm.registered_at.strftime("%d/%m/%Y") if pm.registered_at else "N/A")
+            metrics = {
+                "total_potential_solar_hours": 0.0,
+                "solar_downtime_hours": 0.0,
+                "net_operating_hours": 0.0,
+                "uptime_percent": 100.0,
+                "mtbf_hours": 0.0
+            }
+
+        ws1.append([
+            pm.serial_number,
+            location,
+            install_date,
+            metrics["total_potential_solar_hours"],
+            metrics["solar_downtime_hours"],
+            metrics["net_operating_hours"],
+            f"{metrics['uptime_percent']:.1f}%",
+            metrics["mtbf_hours"],
+            len(repair_logs)
+        ])
+
+    # Sheet 2: Historial de Reparaciones
+    ws2 = wb.create_sheet(title="Historial Reparaciones")
+    ws2.append(["HISTORIAL DE PARADAS Y REPARACIONES DE MÓDULOS"])
+    ws2.cell(row=1, column=1).font = title_font
+    ws2.append([])
+
+    headers_ws2 = ["ID", "Serial Módulo", "Unidad Inversora", "Slot", "Fecha Parada", "Fecha Arranque", "Motivo", "Diagnóstico", "Estado"]
+    ws2.append(headers_ws2)
+
+    repairs = db.query(RepairLog).order_by(RepairLog.stop_time.desc()).all()
+    for r in repairs:
+        ws2.append([
+            r.id,
+            r.serial_number,
+            r.inverter_id,
+            r.slot_number,
+            r.stop_time.strftime("%d/%m/%Y %H:%M") if r.stop_time else "",
+            r.restart_time.strftime("%d/%m/%Y %H:%M") if r.restart_time else "EN REPARACIÓN",
+            r.reason,
+            r.diagnosis or "Pendiente",
+            "ABIERTA" if r.status == "open" else "RESUELTA"
+        ])
+
+    # Sheet 3: Historial de Reemplazos
+    ws3 = wb.create_sheet(title="Historial Reemplazos")
+    ws3.append(["REGISTRO DE REEMPLAZOS DE MÓDULOS EN SLOTS"])
+    ws3.cell(row=1, column=1).font = title_font
+    ws3.append([])
+
+    headers_ws3 = ["ID", "Unidad Inversora", "Slot", "Serial Antiguo", "Serial Nuevo", "Fecha Reemplazo", "Motivo", "Realizado Por"]
+    ws3.append(headers_ws3)
+
+    replacements = db.query(ReplacementLog).order_by(ReplacementLog.timestamp.desc()).all()
+    for rep in replacements:
+        ws3.append([
+            rep.id,
+            rep.inverter_id,
+            rep.slot_number,
+            rep.old_serial,
+            rep.new_serial,
+            rep.timestamp.strftime("%d/%m/%Y %H:%M") if rep.timestamp else "",
+            rep.reason,
+            rep.performed_by or "Técnico Solar"
+        ])
+
+    # Styling and column width calculation
+    for ws in [ws1, ws2, ws3]:
+        for col_idx in range(1, ws.max_column + 1):
+            cell = ws.cell(row=3, column=col_idx)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+            for cell in row:
+                cell.border = thin_border
+                if cell.row > 3 and isinstance(cell.value, (int, float)):
+                    cell.alignment = Alignment(horizontal="right")
+
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"Solaris_Control_Reporte_{now.strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 # Mount static files for Frontend UI
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
@@ -1013,12 +1461,31 @@ if os.path.exists(STATIC_DIR):
 
 @app.get("/")
 def read_root():
+    if READ_ONLY_MODE:
+        stakeholder_path = os.path.join(STATIC_DIR, "stakeholder.html")
+        if os.path.exists(stakeholder_path):
+            return FileResponse(stakeholder_path)
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return JSONResponse({"message": "API de Granja Solar lista. Visite /docs para la documentación REST API."})
 
+@app.get("/stakeholder")
+def read_stakeholder_view():
+    stakeholder_path = os.path.join(STATIC_DIR, "stakeholder.html")
+    if os.path.exists(stakeholder_path):
+        return FileResponse(stakeholder_path)
+    raise HTTPException(status_code=404, detail="Vista de Stakeholders no encontrada.")
+
+@app.get("/operator")
+def read_operator_view():
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="Vista de Operador no encontrada.")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.main:app" if __package__ else "main:app", host="0.0.0.0", port=8000, reload=True)
+
 

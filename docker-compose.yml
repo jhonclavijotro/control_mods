@@ -14,7 +14,7 @@ services:
       - READ_ONLY_MODE=false
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/dashboard"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/config"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -35,7 +35,7 @@ services:
       - READ_ONLY_MODE=true
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/dashboard"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/config"]
       interval: 30s
       timeout: 10s
       retries: 3

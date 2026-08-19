@@ -24,11 +24,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalReplace = document.getElementById('modal-replace-module');
     const modalAddSpare = document.getElementById('modal-add-spare');
 
+    // Auth State
+    let currentUser = null;
+    let authToken = localStorage.getItem('solaris_token') || null;
+
+    // Helper for Authenticated Fetch
+    async function authenticatedFetch(url, options = {}) {
+        options.headers = options.headers || {};
+        if (authToken) {
+            options.headers['Authorization'] = `Bearer ${authToken}`;
+        }
+        return fetch(url, options);
+    }
+
     // Initialize App
     initApp();
 
     async function initApp() {
         initTheme();
+        bindAuthEvents();
         bindTabEvents();
         bindModalEvents();
         bindFormEvents();
@@ -36,8 +50,336 @@ document.addEventListener('DOMContentLoaded', () => {
         bindHistoryFilterEvents();
         bindChartPeriodEvents();
         bindKPICardEvents();
-        await checkAppConfig();
-        await loadAllData();
+        await checkAuthSession();
+    }
+
+    async function checkAuthSession() {
+        const loginModal = document.getElementById('modal-mandatory-login');
+        const userBadge = document.getElementById('user-profile-badge');
+
+        if (!authToken) {
+            if (loginModal) loginModal.style.display = 'flex';
+            if (userBadge) userBadge.style.display = 'none';
+            return;
+        }
+
+        try {
+            const res = await authenticatedFetch('/api/auth/me');
+            if (!res.ok) {
+                throw new Error("Sesión caducada");
+            }
+            currentUser = await res.json();
+
+            // Session Valid
+            if (loginModal) loginModal.style.display = 'none';
+            if (userBadge) userBadge.style.display = 'inline-flex';
+
+            const nameEl = document.getElementById('user-display-name');
+            const roleEl = document.getElementById('user-role-badge');
+            if (nameEl) nameEl.textContent = currentUser.full_name || currentUser.username;
+            if (roleEl) {
+                roleEl.textContent = currentUser.role.toUpperCase();
+                roleEl.className = `role-badge role-badge-${currentUser.role}`;
+            }
+
+            await checkAppConfig();
+            applyRolePermissions();
+            await loadAllData();
+        } catch (e) {
+            console.warn("Sesión no válida o expirada:", e);
+            localStorage.removeItem('solaris_token');
+            authToken = null;
+            currentUser = null;
+            if (loginModal) loginModal.style.display = 'flex';
+            if (userBadge) userBadge.style.display = 'none';
+        }
+    }
+
+    function applyRolePermissions() {
+        if (!currentUser) return;
+
+        const btnUsers = document.getElementById('btn-manage-users');
+        const btnSeedClean = document.getElementById('btn-seed-clean');
+        const btnSeedReset = document.getElementById('btn-seed-reset');
+
+        if (currentUser.role === 'admin') {
+            if (btnUsers) btnUsers.style.display = 'inline-flex';
+            if (btnSeedClean) btnSeedClean.style.display = 'inline-flex';
+            if (btnSeedReset) btnSeedReset.style.display = 'inline-flex';
+        } else if (currentUser.role === 'operator') {
+            if (btnUsers) btnUsers.style.display = 'none';
+            if (btnSeedClean) btnSeedClean.style.display = 'none';
+            if (btnSeedReset) btnSeedReset.style.display = 'none';
+        } else {
+            // stakeholder / read-only
+            if (btnUsers) btnUsers.style.display = 'none';
+            if (btnSeedClean) btnSeedClean.style.display = 'none';
+            if (btnSeedReset) btnSeedReset.style.display = 'none';
+
+            // Disable mutating buttons
+            ['btn-quick-stop', 'btn-quick-replace', 'btn-add-spare'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('btn-read-only-disabled');
+                }
+            });
+        }
+    }
+
+    function bindAuthEvents() {
+        // Toggle Login / Register Views
+        const linkShowReg = document.getElementById('link-show-register');
+        const linkShowLogin = document.getElementById('link-show-login');
+        const formLogin = document.getElementById('form-mandatory-login');
+        const formReg = document.getElementById('form-mandatory-register');
+        const subheading = document.getElementById('login-subheading');
+
+        if (linkShowReg) {
+            linkShowReg.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (formLogin) formLogin.style.display = 'none';
+                if (formReg) formReg.style.display = 'block';
+                if (subheading) subheading.textContent = 'Crear Cuenta de Stakeholder (Solo Lectura)';
+            });
+        }
+
+        if (linkShowLogin) {
+            linkShowLogin.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (formReg) formReg.style.display = 'none';
+                if (formLogin) formLogin.style.display = 'block';
+                if (subheading) subheading.textContent = 'Ingreso al Sistema de Mantenimiento Solar';
+            });
+        }
+
+        // Form Mandatory Login Submit
+        if (formLogin) {
+            formLogin.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const usernameInput = document.getElementById('login-username');
+                const passwordInput = document.getElementById('login-password');
+                const errorMsg = document.getElementById('login-error-msg');
+                const submitBtn = document.getElementById('btn-login-submit');
+
+                if (errorMsg) errorMsg.style.display = 'none';
+                if (submitBtn) submitBtn.disabled = true;
+
+                try {
+                    const res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: usernameInput.value.trim(),
+                            password: passwordInput.value
+                        })
+                    });
+
+                    const data = await res.json();
+                    if (!res.ok) {
+                        throw new Error(data.detail || "Error al iniciar sesión.");
+                    }
+
+                    authToken = data.token;
+                    currentUser = data.user;
+                    localStorage.setItem('solaris_token', authToken);
+
+                    showToast(`Bienvenido ${currentUser.full_name}`, 'success');
+                    passwordInput.value = '';
+                    await checkAuthSession();
+                } catch (err) {
+                    if (errorMsg) {
+                        errorMsg.textContent = err.message;
+                        errorMsg.style.display = 'block';
+                    }
+                } finally {
+                    if (submitBtn) submitBtn.disabled = false;
+                }
+            });
+        }
+
+        // Form Mandatory Register Submit
+        if (formReg) {
+            formReg.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const fullnameInput = document.getElementById('reg-fullname');
+                const usernameInput = document.getElementById('reg-username');
+                const passwordInput = document.getElementById('reg-password');
+                const errorMsg = document.getElementById('register-error-msg');
+                const submitBtn = document.getElementById('btn-register-submit');
+
+                if (errorMsg) errorMsg.style.display = 'none';
+                if (submitBtn) submitBtn.disabled = true;
+
+                try {
+                    const res = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            full_name: fullnameInput.value.trim(),
+                            username: usernameInput.value.trim(),
+                            password: passwordInput.value
+                        })
+                    });
+
+                    const data = await res.json();
+                    if (!res.ok) {
+                        throw new Error(data.detail || "Error al registrar usuario.");
+                    }
+
+                    authToken = data.token;
+                    currentUser = data.user;
+                    localStorage.setItem('solaris_token', authToken);
+
+                    showToast(`Registro exitoso. Bienvenido ${currentUser.full_name}`, 'success');
+                    fullnameInput.value = '';
+                    usernameInput.value = '';
+                    passwordInput.value = '';
+                    await checkAuthSession();
+                } catch (err) {
+                    if (errorMsg) {
+                        errorMsg.textContent = err.message;
+                        errorMsg.style.display = 'block';
+                    }
+                } finally {
+                    if (submitBtn) submitBtn.disabled = false;
+                }
+            });
+        }
+
+        // Logout Button
+        const btnLogout = document.getElementById('btn-logout');
+        if (btnLogout) {
+            btnLogout.addEventListener('click', async () => {
+                try {
+                    await authenticatedFetch('/api/auth/logout', { method: 'POST' });
+                } catch (e) {}
+
+                localStorage.removeItem('solaris_token');
+                authToken = null;
+                currentUser = null;
+                showToast("Sesión cerrada correctamente", "info");
+                await checkAuthSession();
+            });
+        }
+
+        // Export Excel Button (.xlsx)
+        const btnExcel = document.getElementById('btn-export-excel');
+        if (btnExcel) {
+            btnExcel.addEventListener('click', async () => {
+                try {
+                    showToast("Generando reporte Excel (.xlsx)...", "info");
+                    const res = await authenticatedFetch('/api/export/xlsx');
+                    if (!res.ok) throw new Error("Error al generar el reporte Excel.");
+
+                    const blob = await res.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `Solaris_Control_Reporte_${new Date().toISOString().slice(0,10)}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    showToast("Reporte Excel descargado exitosamente", "success");
+                } catch (err) {
+                    console.error("Error en descarga Excel:", err);
+                    showToast("Falla al descargar reporte Excel.", "error");
+                }
+            });
+        }
+
+        // Manage Users Modal Button
+        const btnUsers = document.getElementById('btn-manage-users');
+        const modalUsers = document.getElementById('modal-manage-users');
+        if (btnUsers && modalUsers) {
+            btnUsers.addEventListener('click', () => {
+                modalUsers.classList.add('active');
+                loadUsersList();
+            });
+        }
+
+        // Form Create User Submit
+        const formCreateUser = document.getElementById('form-create-user');
+        if (formCreateUser) {
+            formCreateUser.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('new-user-username').value;
+                const fullname = document.getElementById('new-user-fullname').value;
+                const password = document.getElementById('new-user-password').value;
+                const role = document.getElementById('new-user-role').value;
+
+                try {
+                    const res = await authenticatedFetch('/api/users', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: username,
+                            full_name: fullname,
+                            password: password,
+                            role: role
+                        })
+                    });
+
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || "Error al crear usuario.");
+
+                    showToast(data.message, "success");
+                    formCreateUser.reset();
+                    await loadUsersList();
+                } catch (err) {
+                    showToast(err.message, "error");
+                }
+            });
+        }
+    }
+
+    async function loadUsersList() {
+        const tableBody = document.getElementById('users-table-body');
+        if (!tableBody) return;
+
+        try {
+            const res = await authenticatedFetch('/api/users');
+            if (!res.ok) return;
+
+            const users = await res.json();
+            tableBody.innerHTML = users.map(u => `
+                <tr>
+                    <td><strong>${u.username}</strong></td>
+                    <td>${u.full_name}</td>
+                    <td><span class="role-badge role-badge-${u.role}">${u.role.toUpperCase()}</span></td>
+                    <td>
+                        ${u.username !== 'admin' && currentUser && u.id !== currentUser.id ? `
+                            <button type="button" class="btn btn-sm btn-danger btn-delete-user" data-id="${u.id}" data-username="${u.username}">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        ` : '<span class="text-muted">Protegido</span>'}
+                    </td>
+                </tr>
+            `).join('');
+
+            // Bind delete user handlers
+            tableBody.querySelectorAll('.btn-delete-user').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const userId = btn.dataset.id;
+                    const username = btn.dataset.username;
+                    if (!confirm(`¿Eliminar al usuario '${username}'?`)) return;
+
+                    try {
+                        const res = await authenticatedFetch(`/api/users/${userId}`, { method: 'DELETE' });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.detail || "Error al eliminar usuario.");
+
+                        showToast(data.message, "success");
+                        await loadUsersList();
+                    } catch (err) {
+                        showToast(err.message, "error");
+                    }
+                });
+            });
+        } catch (e) {
+            console.error("Error al cargar lista de usuarios:", e);
+        }
     }
 
     async function checkAppConfig() {
@@ -68,7 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function initTheme() {
         const savedTheme = localStorage.getItem('solaris_theme');
         const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const initialTheme = savedTheme || (systemPrefersDark ? 'dark' : 'dark');
+        const initialTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
         
         applyTheme(initialTheme, false);
 

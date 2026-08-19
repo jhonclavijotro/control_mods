@@ -33,6 +33,12 @@
             <div class="solar-schedule-badge">
                 <i class="fa-regular fa-clock"></i> Horario de Operación: <strong>07:00 AM - 06:00 PM (11h/día)</strong>
             </div>
+            <button id="btn-export-excel" type="button" class="btn btn-success" title="Descargar Reporte Completo en Excel (.xlsx)">
+                <i class="fa-solid fa-file-excel"></i> Exportar Excel (.xlsx)
+            </button>
+            <button id="btn-manage-users" type="button" class="btn btn-outline" style="display: none;" title="Gestión de Usuarios y Accesos">
+                <i class="fa-solid fa-users-gear"></i> Usuarios
+            </button>
             <button id="btn-theme-toggle" type="button" class="btn btn-outline" title="Cambiar Tema (Claro / Oscuro)">
                 <i class="fa-solid fa-moon" id="theme-toggle-icon"></i> <span id="theme-toggle-text">Tema Oscuro</span>
             </button>
@@ -42,6 +48,14 @@
             <button id="btn-seed-reset" type="button" class="btn btn-outline" title="Reiniciar datos iniciales de demostración">
                 <i class="fa-solid fa-rotate"></i> Datos Demo
             </button>
+            <div id="user-profile-badge" class="user-profile-badge" style="display: none;">
+                <i class="fa-solid fa-circle-user"></i>
+                <span id="user-display-name">---</span>
+                <span id="user-role-badge" class="role-badge">---</span>
+                <button id="btn-logout" type="button" class="btn-icon-logout" title="Cerrar Sesión">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                </button>
+            </div>
         </div>
     </header>
 
@@ -767,6 +781,120 @@
                     <button type="submit" class="btn btn-success"><i class="fa-solid fa-check"></i> Guardar en Inventario</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Modal Obligatorio de Inicio de Sesión / Registro -->
+    <div class="login-fullscreen-overlay" id="modal-mandatory-login" style="display: flex;">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-logo-icon"><i class="fa-solid fa-sun-plant-wilt"></i></div>
+                <h2>SOLARIS CONTROL</h2>
+                <p id="login-subheading">Ingreso al Sistema de Mantenimiento Solar</p>
+            </div>
+
+            <!-- Formulario de Login -->
+            <form id="form-mandatory-login">
+                <div id="login-error-msg" class="login-error-alert" style="display: none;"></div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-user"></i> Nombre de Usuario</label>
+                    <input type="text" id="login-username" class="form-control" required placeholder="ej: stakeholder" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-lock"></i> Contraseña</label>
+                    <input type="password" id="login-password" class="form-control" required placeholder="••••••••" autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block btn-login-submit" id="btn-login-submit">
+                    <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión
+                </button>
+                <div class="login-toggle-link mt-3 text-center">
+                    <small>¿No tienes cuenta? <a href="#" id="link-show-register" style="color: #60a5fa; text-decoration: underline;">Registrarse como Stakeholder</a></small>
+                </div>
+            </form>
+
+            <!-- Formulario de Registro de Stakeholder -->
+            <form id="form-mandatory-register" style="display: none;">
+                <div id="register-error-msg" class="login-error-alert" style="display: none;"></div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-id-card"></i> Nombre Completo</label>
+                    <input type="text" id="reg-fullname" class="form-control" required placeholder="ej: María Pérez">
+                </div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-user"></i> Nombre de Usuario</label>
+                    <input type="text" id="reg-username" class="form-control" required placeholder="ej: mperez">
+                </div>
+                <div class="form-group">
+                    <label><i class="fa-solid fa-lock"></i> Contraseña</label>
+                    <input type="password" id="reg-password" class="form-control" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn btn-success btn-block btn-login-submit" id="btn-register-submit">
+                    <i class="fa-solid fa-user-plus"></i> Crear Cuenta de Stakeholder
+                </button>
+                <div class="login-toggle-link mt-3 text-center">
+                    <small>¿Ya tienes cuenta? <a href="#" id="link-show-login" style="color: #60a5fa; text-decoration: underline;">Volver a Iniciar Sesión</a></small>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 5: Gestión de Usuarios y Accesos -->
+    <div class="modal-overlay" id="modal-manage-users">
+        <div class="modal-card modal-lg">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-users-gear"></i> Gestión de Usuarios y Accesos</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="users-section-grid">
+                    <div class="create-user-panel">
+                        <h4><i class="fa-solid fa-user-plus"></i> Crear Nuevo Usuario</h4>
+                        <form id="form-create-user">
+                            <div class="form-group">
+                                <label>Nombre de Usuario</label>
+                                <input type="text" id="new-user-username" class="form-control" required placeholder="ej: jsmith">
+                            </div>
+                            <div class="form-group">
+                                <label>Nombre Completo</label>
+                                <input type="text" id="new-user-fullname" class="form-control" required placeholder="ej: Juan Smith">
+                            </div>
+                            <div class="form-group">
+                                <label>Contraseña</label>
+                                <input type="password" id="new-user-password" class="form-control" required placeholder="••••••••">
+                            </div>
+                            <div class="form-group">
+                                <label>Rol de Usuario</label>
+                                <select id="new-user-role" class="form-control">
+                                    <option value="operator">Operador (Edición de Reparaciones / Módulos)</option>
+                                    <option value="admin">Administrador (Acceso Total + Usuarios)</option>
+                                    <option value="stakeholder">Stakeholder (Solo Lectura / Reportes)</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-block"><i class="fa-solid fa-check"></i> Registrar Usuario</button>
+                        </form>
+                    </div>
+                    <div class="users-list-panel">
+                        <h4><i class="fa-solid fa-list-check"></i> Usuarios Registrados</h4>
+                        <div class="table-responsive">
+                            <table class="data-table" id="users-table">
+                                <thead>
+                                    <tr>
+                                        <th>Usuario</th>
+                                        <th>Nombre</th>
+                                        <th>Rol</th>
+                                        <th>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="users-table-body">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline close-modal">Cerrar</button>
+            </div>
         </div>
     </div>
 
