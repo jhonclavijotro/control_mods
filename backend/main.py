@@ -1470,6 +1470,13 @@ def read_root():
         return FileResponse(index_path)
     return JSONResponse({"message": "API de Granja Solar lista. Visite /docs para la documentación REST API."})
 
+@app.get("/login")
+def read_login_view():
+    login_path = os.path.join(STATIC_DIR, "login.html")
+    if os.path.exists(login_path):
+        return FileResponse(login_path)
+    raise HTTPException(status_code=404, detail="Vista de inicio de sesión no encontrada.")
+
 @app.get("/stakeholder")
 def read_stakeholder_view():
     stakeholder_path = os.path.join(STATIC_DIR, "stakeholder.html")

@@ -54,12 +54,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function checkAuthSession() {
-        const loginModal = document.getElementById('modal-mandatory-login');
         const userBadge = document.getElementById('user-profile-badge');
 
         if (!authToken) {
-            if (loginModal) loginModal.style.display = 'flex';
-            if (userBadge) userBadge.style.display = 'none';
+            window.location.href = '/login';
             return;
         }
 
@@ -70,8 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             currentUser = await res.json();
 
-            // Session Valid
-            if (loginModal) loginModal.style.display = 'none';
+            // Redirect if role is stakeholder (should not access operator view)
+            if (currentUser.role === 'stakeholder') {
+                window.location.href = '/stakeholder';
+                return;
+            }
+
             if (userBadge) userBadge.style.display = 'inline-flex';
 
             const nameEl = document.getElementById('user-display-name');
@@ -90,8 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.removeItem('solaris_token');
             authToken = null;
             currentUser = null;
-            if (loginModal) loginModal.style.display = 'flex';
-            if (userBadge) userBadge.style.display = 'none';
+            window.location.href = '/login';
         }
     }
 
@@ -128,125 +129,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function bindAuthEvents() {
-        // Toggle Login / Register Views
-        const linkShowReg = document.getElementById('link-show-register');
-        const linkShowLogin = document.getElementById('link-show-login');
-        const formLogin = document.getElementById('form-mandatory-login');
-        const formReg = document.getElementById('form-mandatory-register');
-        const subheading = document.getElementById('login-subheading');
-
-        if (linkShowReg) {
-            linkShowReg.addEventListener('click', (e) => {
-                e.preventDefault();
-                if (formLogin) formLogin.style.display = 'none';
-                if (formReg) formReg.style.display = 'block';
-                if (subheading) subheading.textContent = 'Crear Cuenta de Stakeholder (Solo Lectura)';
-            });
-        }
-
-        if (linkShowLogin) {
-            linkShowLogin.addEventListener('click', (e) => {
-                e.preventDefault();
-                if (formReg) formReg.style.display = 'none';
-                if (formLogin) formLogin.style.display = 'block';
-                if (subheading) subheading.textContent = 'Ingreso al Sistema de Mantenimiento Solar';
-            });
-        }
-
-        // Form Mandatory Login Submit
-        if (formLogin) {
-            formLogin.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const usernameInput = document.getElementById('login-username');
-                const passwordInput = document.getElementById('login-password');
-                const errorMsg = document.getElementById('login-error-msg');
-                const submitBtn = document.getElementById('btn-login-submit');
-
-                if (errorMsg) errorMsg.style.display = 'none';
-                if (submitBtn) submitBtn.disabled = true;
-
-                try {
-                    const res = await fetch('/api/auth/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            username: usernameInput.value.trim(),
-                            password: passwordInput.value
-                        })
-                    });
-
-                    const data = await res.json();
-                    if (!res.ok) {
-                        throw new Error(data.detail || "Error al iniciar sesión.");
-                    }
-
-                    authToken = data.token;
-                    currentUser = data.user;
-                    localStorage.setItem('solaris_token', authToken);
-
-                    showToast(`Bienvenido ${currentUser.full_name}`, 'success');
-                    passwordInput.value = '';
-                    await checkAuthSession();
-                } catch (err) {
-                    if (errorMsg) {
-                        errorMsg.textContent = err.message;
-                        errorMsg.style.display = 'block';
-                    }
-                } finally {
-                    if (submitBtn) submitBtn.disabled = false;
-                }
-            });
-        }
-
-        // Form Mandatory Register Submit
-        if (formReg) {
-            formReg.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const fullnameInput = document.getElementById('reg-fullname');
-                const usernameInput = document.getElementById('reg-username');
-                const passwordInput = document.getElementById('reg-password');
-                const errorMsg = document.getElementById('register-error-msg');
-                const submitBtn = document.getElementById('btn-register-submit');
-
-                if (errorMsg) errorMsg.style.display = 'none';
-                if (submitBtn) submitBtn.disabled = true;
-
-                try {
-                    const res = await fetch('/api/auth/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            full_name: fullnameInput.value.trim(),
-                            username: usernameInput.value.trim(),
-                            password: passwordInput.value
-                        })
-                    });
-
-                    const data = await res.json();
-                    if (!res.ok) {
-                        throw new Error(data.detail || "Error al registrar usuario.");
-                    }
-
-                    authToken = data.token;
-                    currentUser = data.user;
-                    localStorage.setItem('solaris_token', authToken);
-
-                    showToast(`Registro exitoso. Bienvenido ${currentUser.full_name}`, 'success');
-                    fullnameInput.value = '';
-                    usernameInput.value = '';
-                    passwordInput.value = '';
-                    await checkAuthSession();
-                } catch (err) {
-                    if (errorMsg) {
-                        errorMsg.textContent = err.message;
-                        errorMsg.style.display = 'block';
-                    }
-                } finally {
-                    if (submitBtn) submitBtn.disabled = false;
-                }
-            });
-        }
-
         // Logout Button
         const btnLogout = document.getElementById('btn-logout');
         if (btnLogout) {
@@ -259,7 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 authToken = null;
                 currentUser = null;
                 showToast("Sesión cerrada correctamente", "info");
-                await checkAuthSession();
+                window.location.href = '/login';
             });
         }
 
