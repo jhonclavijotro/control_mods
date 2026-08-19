@@ -46,6 +46,24 @@ def verify_password(password: str, password_hash: str) -> bool:
 # In-memory session token mapping: token -> user dict
 SESSIONS = {}
 
+def get_current_user(request: Request):
+    """Dependency to check if user is authenticated (valid token in headers)."""
+    auth_header = request.headers.get("Authorization") or ""
+    token = auth_header.replace("Bearer ", "").strip()
+    if not token or token not in SESSIONS:
+        raise HTTPException(status_code=401, detail="Sesión no válida o expirada.")
+    return SESSIONS[token]
+
+def get_current_operator_or_admin(request: Request):
+    """Dependency to check if user is authenticated and is admin or operator."""
+    user_info = get_current_user(request)
+    if user_info.get("role") not in ["admin", "operator"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso denegado: Se requiere rol de Operador o Administrador para realizar esta acción."
+        )
+    return user_info
+
 # Create Database tables and auto-migrate schema
 Base.metadata.create_all(bind=engine)
 auto_migrate_db_schema()
@@ -101,7 +119,7 @@ def get_app_config():
     }
 
 @app.post("/api/upload")
-async def upload_attachment(file: UploadFile = File(...)):
+async def upload_attachment(file: UploadFile = File(...), current_user: dict = Depends(get_current_operator_or_admin)):
     """Upload an optional file attachment (document, photo, report) for maintenance logs."""
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="Ningún archivo seleccionado.")
@@ -357,7 +375,7 @@ def startup_event():
 # API Endpoints
 
 @app.get("/api/inverters")
-def get_inverters(period: str = "month", db: Session = Depends(get_db)):
+def get_inverters(period: str = "month", db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Return list of all 8 inverters with their slots and live status for a specified period filter."""
     inverters = db.query(Inverter).all()
     result = []
@@ -417,7 +435,7 @@ def get_inverters(period: str = "month", db: Session = Depends(get_db)):
     return result
 
 @app.get("/api/inverters/{inverter_id}")
-def get_inverter_detail(inverter_id: str, db: Session = Depends(get_db)):
+def get_inverter_detail(inverter_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Return detailed information for a single inverter unit."""
     inv = db.query(Inverter).filter(Inverter.id == inverter_id.upper()).first()
     if not inv:
@@ -461,7 +479,7 @@ def get_inverter_detail(inverter_id: str, db: Session = Depends(get_db)):
     }
 
 @app.get("/api/dashboard")
-def get_dashboard_summary(db: Session = Depends(get_db)):
+def get_dashboard_summary(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get global summary stats for the solar farm."""
     total_slots = db.query(ModuleSlot).count() or 46
     all_pms = db.query(PowerModule).filter(PowerModule.status != "spare", PowerModule.status != "retired").all()
@@ -523,7 +541,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
 
 
 @app.post("/api/repairs/stop")
-def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db)):
+def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Register a stop event for a single power module slot OR for the entire inverter unit (slot_number=0)."""
     inv_id = req.inverter_id.upper()
 
@@ -600,7 +618,7 @@ def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db)):
     return {"message": "Parada por reparación registrada exitosamente", "repair_id": repair.id}
 
 @app.post("/api/repairs/restart-inverter")
-def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_db)):
+def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Restart all open repairs for a given inverter unit."""
     if not req.diagnosis or not req.diagnosis.strip():
         raise HTTPException(status_code=400, detail="Es obligatorio proporcionar un diagnóstico final o solución aplicada para reiniciar las paradas del inversor.")
@@ -633,7 +651,7 @@ def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_
     return {"message": f"Unidad Inversora {inv_id} restablecida exitosamente. Todos los módulos en marcha."}
 
 @app.post("/api/repairs/restart")
-def register_repair_restart(req: RestartRepairRequest, db: Session = Depends(get_db)):
+def register_repair_restart(req: RestartRepairRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Register restart of a module that was under repair."""
     if not req.diagnosis or not req.diagnosis.strip():
         raise HTTPException(status_code=400, detail="Es obligatorio proporcionar un diagnóstico final o solución aplicada para registrar el arranque.")
@@ -662,7 +680,7 @@ def register_repair_restart(req: RestartRepairRequest, db: Session = Depends(get
     return {"message": "Arranque de módulo registrado exitosamente"}
 
 @app.post("/api/replacements")
-def register_module_replacement(req: ModuleReplacementRequest, db: Session = Depends(get_db)):
+def register_module_replacement(req: ModuleReplacementRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Replace an existing module in an inverter slot with a new/spare module."""
     slot = db.query(ModuleSlot).filter(
         ModuleSlot.inverter_id == req.inverter_id.upper(),
@@ -721,7 +739,7 @@ def register_module_replacement(req: ModuleReplacementRequest, db: Session = Dep
     return {"message": f"Módulo reemplazado en {req.inverter_id.upper()} slot {req.slot_number}. Nuevo serial: {req.new_serial}"}
 
 @app.get("/api/spares")
-def get_spares(db: Session = Depends(get_db)):
+def get_spares(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """List available spare power modules."""
     spares = db.query(PowerModule).filter(PowerModule.status == "spare").all()
     return [{
@@ -732,7 +750,7 @@ def get_spares(db: Session = Depends(get_db)):
     } for sp in spares]
 
 @app.post("/api/spares")
-def add_spare(req: AddSpareModuleRequest, db: Session = Depends(get_db)):
+def add_spare(req: AddSpareModuleRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Add a new spare power module to inventory."""
     existing = db.query(PowerModule).filter(PowerModule.serial_number == req.serial_number).first()
     if existing:
@@ -756,7 +774,8 @@ def get_all_logs(
     serial_number: Optional[str] = Query(None, description="Filtrar por número serial de módulo"),
     status: Optional[str] = Query(None, description="Filtrar reparaciones por estado: open, resolved, all"),
     search: Optional[str] = Query(None, description="Búsqueda por texto libre en motivos, diagnósticos y seriales"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get audit logs for repairs and replacements with filtering support."""
     repair_query = db.query(RepairLog)
@@ -866,7 +885,7 @@ class EditReplacementLogRequest(BaseModel):
     attachment_name: Optional[str] = None
 
 @app.get("/api/modules")
-def get_all_modules(db: Session = Depends(get_db)):
+def get_all_modules(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """List all power modules in system with their status and metrics (batch queries optimized)."""
     modules = db.query(PowerModule).all()
     now = get_utc_now()
@@ -908,7 +927,7 @@ def get_all_modules(db: Session = Depends(get_db)):
     return result
 
 @app.put("/api/modules/{old_serial}/edit-serial")
-def edit_module_serial(old_serial: str, req: EditSerialRequest, db: Session = Depends(get_db)):
+def edit_module_serial(old_serial: str, req: EditSerialRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Edit the serial number of an existing power module across all system records."""
     new_serial = req.new_serial.strip()
     if not new_serial:
@@ -961,7 +980,7 @@ def edit_module_serial(old_serial: str, req: EditSerialRequest, db: Session = De
     return {"message": f"Serial actualizado exitosamente de '{old_serial}' a '{new_serial}'."}
 
 @app.delete("/api/modules/{serial_number}")
-def delete_module(serial_number: str, db: Session = Depends(get_db)):
+def delete_module(serial_number: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Delete a power module from inventory."""
     pm = db.query(PowerModule).filter(PowerModule.serial_number == serial_number).first()
     if not pm:
@@ -981,7 +1000,8 @@ def edit_slot_installation_date(
     inverter_id: str,
     slot_number: int,
     req: EditSlotInstallationDateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_operator_or_admin)
 ):
     """Edit the installation date and time (installed_at) for a specific module slot."""
     slot = db.query(ModuleSlot).filter(
@@ -1006,7 +1026,7 @@ def edit_slot_installation_date(
     }
 
 @app.put("/api/repairs/{repair_id}")
-def edit_repair_log(repair_id: int, req: EditRepairLogRequest, db: Session = Depends(get_db)):
+def edit_repair_log(repair_id: int, req: EditRepairLogRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Edit details of an existing repair log event for human error correction."""
     repair = db.query(RepairLog).filter(RepairLog.id == repair_id).first()
     if not repair:
@@ -1044,7 +1064,7 @@ def edit_repair_log(repair_id: int, req: EditRepairLogRequest, db: Session = Dep
     return {"message": "Registro de reparación actualizado exitosamente."}
 
 @app.put("/api/replacements/{replacement_id}")
-def edit_replacement_log(replacement_id: int, req: EditReplacementLogRequest, db: Session = Depends(get_db)):
+def edit_replacement_log(replacement_id: int, req: EditReplacementLogRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Edit details of an existing replacement log event for human error correction."""
     rep = db.query(ReplacementLog).filter(ReplacementLog.id == replacement_id).first()
     if not rep:
@@ -1063,7 +1083,7 @@ def edit_replacement_log(replacement_id: int, req: EditReplacementLogRequest, db
     return {"message": "Registro de reemplazo actualizado exitosamente."}
 
 @app.post("/api/seed/clean")
-def clean_database_for_production(db: Session = Depends(get_db)):
+def clean_database_for_production(db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Clear all repairs, replacements, and reset all operating hours to 0 while keeping current serial numbers intact."""
     if READ_ONLY_MODE:
         raise HTTPException(status_code=403, detail="Operación restringida en Modo Solo Lectura.")
@@ -1090,7 +1110,7 @@ def clean_database_for_production(db: Session = Depends(get_db)):
     return {"message": "Horas de operación restablecidas a CERO y reparaciones eliminadas. Los números seriales se han conservado."}
 
 @app.post("/api/seed/reset")
-def reset_database(db: Session = Depends(get_db)):
+def reset_database(db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Reset and re-seed database with default solar farm configuration."""
     if READ_ONLY_MODE:
         raise HTTPException(status_code=403, detail="Operación restringida en Modo Solo Lectura.")
@@ -1107,7 +1127,7 @@ def reset_database(db: Session = Depends(get_db)):
     return {"message": "Base de datos reiniciada con datos por defecto de la granja solar."}
 
 @app.get("/api/export/excel")
-def export_modules_excel(db: Session = Depends(get_db)):
+def export_modules_excel(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Export complete power modules list (installed & stock) as Excel-compatible CSV file."""
     import csv
     import io
@@ -1317,7 +1337,7 @@ def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
     return {"message": f"Usuario '{user.username}' eliminado exitosamente."}
 
 @app.get("/api/export/xlsx")
-def export_modules_xlsx(db: Session = Depends(get_db)):
+def export_modules_xlsx(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Export complete solar farm data (modules, repairs, replacements) as a multi-sheet Excel .xlsx file."""
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side

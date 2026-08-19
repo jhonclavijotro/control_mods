@@ -233,8 +233,12 @@ function applyTheme(theme) {
 async function loadStakeholderData(silent = false) {
     try {
         const [invertersRes, modulesRes] = await Promise.all([
-            fetch(`/api/inverters?period=${currentPeriod}`),
-            fetch(`/api/modules`)
+            fetch(`/api/inverters?period=${currentPeriod}`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            }),
+            fetch(`/api/modules`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            })
         ]);
 
         if (!invertersRes.ok) throw new Error("Error al obtener telemetría de inversores.");
