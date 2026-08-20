@@ -59,12 +59,10 @@ async function initStakeholderApp() {
 }
 
 async function checkAuthSessionStakeholder() {
-    const loginModal = document.getElementById('modal-mandatory-login');
     const userBadge = document.getElementById('user-profile-badge');
 
     if (!authToken) {
-        if (loginModal) loginModal.style.display = 'flex';
-        if (userBadge) userBadge.style.display = 'none';
+        window.location.href = '/login';
         return false;
     }
 
@@ -75,7 +73,6 @@ async function checkAuthSessionStakeholder() {
         if (!res.ok) throw new Error("Sesión expirada");
         currentUser = await res.json();
 
-        if (loginModal) loginModal.style.display = 'none';
         if (userBadge) userBadge.style.display = 'inline-flex';
 
         const nameEl = document.getElementById('user-display-name');
@@ -90,131 +87,13 @@ async function checkAuthSessionStakeholder() {
         localStorage.removeItem('solaris_token');
         authToken = null;
         currentUser = null;
-        if (loginModal) loginModal.style.display = 'flex';
-        if (userBadge) userBadge.style.display = 'none';
+        window.location.href = '/login';
         return false;
     }
 }
 
 // --- EVENT LISTENERS ---
 function setupEventListeners() {
-    // Toggle Login / Register Views
-    const linkShowReg = document.getElementById('link-show-register');
-    const linkShowLogin = document.getElementById('link-show-login');
-    const formLogin = document.getElementById('form-mandatory-login');
-    const formReg = document.getElementById('form-mandatory-register');
-    const subheading = document.getElementById('login-subheading');
-
-    if (linkShowReg) {
-        linkShowReg.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (formLogin) formLogin.style.display = 'none';
-            if (formReg) formReg.style.display = 'block';
-            if (subheading) subheading.textContent = 'Crear Cuenta de Stakeholder (Solo Lectura)';
-        });
-    }
-
-    if (linkShowLogin) {
-        linkShowLogin.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (formReg) formReg.style.display = 'none';
-            if (formLogin) formLogin.style.display = 'block';
-            if (subheading) subheading.textContent = 'Ingreso al Portal Ejecutivo de Stakeholders';
-        });
-    }
-
-    // Mandatory Login Form
-    if (formLogin) {
-        formLogin.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const usernameInput = document.getElementById('login-username');
-            const passwordInput = document.getElementById('login-password');
-            const errorMsg = document.getElementById('login-error-msg');
-            const submitBtn = document.getElementById('btn-login-submit');
-
-            if (errorMsg) errorMsg.style.display = 'none';
-            if (submitBtn) submitBtn.disabled = true;
-
-            try {
-                const res = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        username: usernameInput.value.trim(),
-                        password: passwordInput.value
-                    })
-                });
-
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || "Error al iniciar sesión.");
-
-                authToken = data.token;
-                currentUser = data.user;
-                localStorage.setItem('solaris_token', authToken);
-
-                showToast(`Bienvenido ${currentUser.full_name}`, 'success');
-                passwordInput.value = '';
-                const valid = await checkAuthSessionStakeholder();
-                if (valid) loadStakeholderData();
-            } catch (err) {
-                if (errorMsg) {
-                    errorMsg.textContent = err.message;
-                    errorMsg.style.display = 'block';
-                }
-            } finally {
-                if (submitBtn) submitBtn.disabled = false;
-            }
-        });
-    }
-
-    // Form Mandatory Register Submit
-    if (formReg) {
-        formReg.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const fullnameInput = document.getElementById('reg-fullname');
-            const usernameInput = document.getElementById('reg-username');
-            const passwordInput = document.getElementById('reg-password');
-            const errorMsg = document.getElementById('register-error-msg');
-            const submitBtn = document.getElementById('btn-register-submit');
-
-            if (errorMsg) errorMsg.style.display = 'none';
-            if (submitBtn) submitBtn.disabled = true;
-
-            try {
-                const res = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        full_name: fullnameInput.value.trim(),
-                        username: usernameInput.value.trim(),
-                        password: passwordInput.value
-                    })
-                });
-
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || "Error al registrar usuario.");
-
-                authToken = data.token;
-                currentUser = data.user;
-                localStorage.setItem('solaris_token', authToken);
-
-                showToast(`Registro exitoso. Bienvenido ${currentUser.full_name}`, 'success');
-                fullnameInput.value = '';
-                usernameInput.value = '';
-                passwordInput.value = '';
-                const valid = await checkAuthSessionStakeholder();
-                if (valid) loadStakeholderData();
-            } catch (err) {
-                if (errorMsg) {
-                    errorMsg.textContent = err.message;
-                    errorMsg.style.display = 'block';
-                }
-            } finally {
-                if (submitBtn) submitBtn.disabled = false;
-            }
-        });
-    }
-
     // Logout Button
     const btnLogout = document.getElementById('btn-logout');
     if (btnLogout) {
@@ -230,7 +109,7 @@ function setupEventListeners() {
             authToken = null;
             currentUser = null;
             showToast("Sesión cerrada correctamente", "info");
-            checkAuthSessionStakeholder();
+            window.location.href = '/login';
         });
     }
 
@@ -354,8 +233,12 @@ function applyTheme(theme) {
 async function loadStakeholderData(silent = false) {
     try {
         const [invertersRes, modulesRes] = await Promise.all([
-            fetch(`/api/inverters?period=${currentPeriod}`),
-            fetch(`/api/modules`)
+            fetch(`/api/inverters?period=${currentPeriod}`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            }),
+            fetch(`/api/modules`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            })
         ]);
 
         if (!invertersRes.ok) throw new Error("Error al obtener telemetría de inversores.");

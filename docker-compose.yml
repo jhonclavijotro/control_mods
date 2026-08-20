@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     container_name: solar_farm_control
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8002:8000"
     volumes:
       - ./data:/app/data
     environment:
@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile
     container_name: solar_farm_stakeholder
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8003:8000"
     volumes:
       - ./data:/app/data
       - ./static:/app/static
@@ -40,18 +40,18 @@ services:
       timeout: 10s
       retries: 3
 
-  # Contenedor ngrok para Túnel Web Seguro hacia la Instancia Stakeholders
+  # Contenedor ngrok para Túnel Web Seguro hacia la Instancia Principal
   ngrok:
     image: ngrok/ngrok:latest
     container_name: solar_farm_ngrok
     restart: unless-stopped
     command:
       - "http"
-      - "solar-control-stakeholder:8000"
+      - "solar-control-app:8000"
       - "--url=${NGROK_DOMAIN:-chiquita-unstructural-maura.ngrok-free.dev}"
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
     ports:
-      - "4040:4040"
+      - "127.0.0.1:4040:4040"
     depends_on:
-      - solar-control-stakeholder
+      - solar-control-app

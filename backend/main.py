@@ -43,8 +43,66 @@ def verify_password(password: str, password_hash: str) -> bool:
     except Exception:
         return False
 
-# In-memory session token mapping: token -> user dict
+# In-memory session token mapping: token -> {"user": user_dict, "expires_at": datetime}
 SESSIONS = {}
+SESSION_TTL_HOURS = 12
+
+# Brute-Force Rate Limiting for Login
+FAILED_LOGIN_ATTEMPTS = {}
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+def check_login_rate_limit(client_ip: str):
+    now = get_utc_now()
+    if client_ip in FAILED_LOGIN_ATTEMPTS:
+        attempt_data = FAILED_LOGIN_ATTEMPTS[client_ip]
+        if attempt_data.get("blocked_until") and now < attempt_data["blocked_until"]:
+            mins_left = int((attempt_data["blocked_until"] - now).total_seconds() // 60) + 1
+            raise HTTPException(
+                status_code=429,
+                detail=f"Demasiados intentos fallidos. Su IP ha sido bloqueada temporalmente por {mins_left} minutos."
+            )
+        elif attempt_data.get("blocked_until") and now >= attempt_data["blocked_until"]:
+            del FAILED_LOGIN_ATTEMPTS[client_ip]
+
+def record_failed_login(client_ip: str):
+    now = get_utc_now()
+    if client_ip not in FAILED_LOGIN_ATTEMPTS:
+        FAILED_LOGIN_ATTEMPTS[client_ip] = {"count": 1, "blocked_until": None}
+    else:
+        data = FAILED_LOGIN_ATTEMPTS[client_ip]
+        data["count"] += 1
+        if data["count"] >= MAX_LOGIN_ATTEMPTS:
+            data["blocked_until"] = now + timedelta(minutes=LOCKOUT_MINUTES)
+
+def record_successful_login(client_ip: str):
+    if client_ip in FAILED_LOGIN_ATTEMPTS:
+        del FAILED_LOGIN_ATTEMPTS[client_ip]
+
+def get_current_user(request: Request):
+    """Dependency to check if user is authenticated (valid & non-expired token in headers)."""
+    auth_header = request.headers.get("Authorization") or ""
+    token = auth_header.replace("Bearer ", "").strip()
+    if not token or token not in SESSIONS:
+        raise HTTPException(status_code=401, detail="Sesión no válida o expirada.")
+    
+    session_data = SESSIONS[token]
+    expires_at = session_data.get("expires_at")
+    if expires_at and get_utc_now() > expires_at:
+        del SESSIONS[token]
+        raise HTTPException(status_code=401, detail="Sesión expirada. Por favor inicie sesión nuevamente.")
+
+    return session_data["user"]
+
+def get_current_operator_or_admin(request: Request):
+    """Dependency to check if user is authenticated and is admin or operator."""
+    user_info = get_current_user(request)
+    if user_info.get("role") not in ["admin", "operator"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso denegado: Se requiere rol de Operador o Administrador para realizar esta acción."
+        )
+    return user_info
 
 # Create Database tables and auto-migrate schema
 Base.metadata.create_all(bind=engine)
@@ -55,14 +113,27 @@ DATA_DIR = os.path.dirname(os.path.abspath(engine.url.database)) if engine.url.d
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Read-Only Environment Configuration
+# Read-Only & Docs Environment Configuration
 READ_ONLY_MODE = os.getenv("READ_ONLY_MODE", "false").lower() in ["true", "1", "yes"]
+ENABLE_DOCS = os.getenv("ENABLE_DOCS", "false").lower() in ["true", "1", "yes"]
 
 app = FastAPI(
     title="Control de Módulos de Potencia - Granja Solar",
     description="API REST para seguimiento, mantenimiento y métricas de unidades de inversión y módulos de potencia.",
-    version="1.2.0"
+    version="1.2.0",
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None
 )
+
+# Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
 
 # Read-Only Middleware for Stakeholder Restricted Mode
 @app.middleware("http")
@@ -87,7 +158,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+@app.get("/uploads/{filename}")
+def serve_upload_file(filename: str, request: Request, token: Optional[str] = Query(None)):
+    """Serve uploaded attachments securely only to authenticated users."""
+    auth_header = request.headers.get("Authorization") or ""
+    auth_token = auth_header.replace("Bearer ", "").strip() or token
+    if not auth_token or auth_token not in SESSIONS:
+        raise HTTPException(status_code=401, detail="Acceso denegado: Se requiere autenticación para acceder a los archivos adjuntos.")
+
+    session_data = SESSIONS[auth_token]
+    expires_at = session_data.get("expires_at")
+    if expires_at and get_utc_now() > expires_at:
+        del SESSIONS[auth_token]
+        raise HTTPException(status_code=401, detail="Sesión expirada.")
+
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.join(UPLOAD_DIR, safe_filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado.")
+    return FileResponse(file_path)
 
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".txt"}
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB limit
@@ -101,7 +190,7 @@ def get_app_config():
     }
 
 @app.post("/api/upload")
-async def upload_attachment(file: UploadFile = File(...)):
+async def upload_attachment(file: UploadFile = File(...), current_user: dict = Depends(get_current_operator_or_admin)):
     """Upload an optional file attachment (document, photo, report) for maintenance logs."""
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="Ningún archivo seleccionado.")
@@ -319,11 +408,14 @@ def seed_database_if_needed(db: Session):
     db.commit()
 
 def seed_default_users_if_needed(db: Session):
+    admin_pass = os.getenv("ADMIN_PASSWORD", "SolarisAdmin2026!")
+    stakeholder_pass = os.getenv("STAKEHOLDER_PASSWORD", "SolarisViewer2026!")
+
     admin_user = db.query(User).filter(User.username == "admin").first()
     if not admin_user:
         admin_user = User(
             username="admin",
-            password_hash=hash_password("SolarisAdmin2026!"),
+            password_hash=hash_password(admin_pass),
             full_name="Administrador del Sistema",
             role="admin",
             created_at=get_utc_now(),
@@ -335,7 +427,7 @@ def seed_default_users_if_needed(db: Session):
     if not stakeholder_user:
         stakeholder_user = User(
             username="stakeholder",
-            password_hash=hash_password("SolarisViewer2026!"),
+            password_hash=hash_password(stakeholder_pass),
             full_name="Usuario Stakeholder",
             role="stakeholder",
             created_at=get_utc_now(),
@@ -357,7 +449,7 @@ def startup_event():
 # API Endpoints
 
 @app.get("/api/inverters")
-def get_inverters(period: str = "month", db: Session = Depends(get_db)):
+def get_inverters(period: str = "month", db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Return list of all 8 inverters with their slots and live status for a specified period filter."""
     inverters = db.query(Inverter).all()
     result = []
@@ -417,7 +509,7 @@ def get_inverters(period: str = "month", db: Session = Depends(get_db)):
     return result
 
 @app.get("/api/inverters/{inverter_id}")
-def get_inverter_detail(inverter_id: str, db: Session = Depends(get_db)):
+def get_inverter_detail(inverter_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Return detailed information for a single inverter unit."""
     inv = db.query(Inverter).filter(Inverter.id == inverter_id.upper()).first()
     if not inv:
@@ -461,7 +553,7 @@ def get_inverter_detail(inverter_id: str, db: Session = Depends(get_db)):
     }
 
 @app.get("/api/dashboard")
-def get_dashboard_summary(db: Session = Depends(get_db)):
+def get_dashboard_summary(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get global summary stats for the solar farm."""
     total_slots = db.query(ModuleSlot).count() or 46
     all_pms = db.query(PowerModule).filter(PowerModule.status != "spare", PowerModule.status != "retired").all()
@@ -523,7 +615,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
 
 
 @app.post("/api/repairs/stop")
-def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db)):
+def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Register a stop event for a single power module slot OR for the entire inverter unit (slot_number=0)."""
     inv_id = req.inverter_id.upper()
 
@@ -600,7 +692,7 @@ def register_repair_stop(req: StopRepairRequest, db: Session = Depends(get_db)):
     return {"message": "Parada por reparación registrada exitosamente", "repair_id": repair.id}
 
 @app.post("/api/repairs/restart-inverter")
-def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_db)):
+def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Restart all open repairs for a given inverter unit."""
     if not req.diagnosis or not req.diagnosis.strip():
         raise HTTPException(status_code=400, detail="Es obligatorio proporcionar un diagnóstico final o solución aplicada para reiniciar las paradas del inversor.")
@@ -633,7 +725,7 @@ def restart_inverter_all(req: RestartInverterRequest, db: Session = Depends(get_
     return {"message": f"Unidad Inversora {inv_id} restablecida exitosamente. Todos los módulos en marcha."}
 
 @app.post("/api/repairs/restart")
-def register_repair_restart(req: RestartRepairRequest, db: Session = Depends(get_db)):
+def register_repair_restart(req: RestartRepairRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Register restart of a module that was under repair."""
     if not req.diagnosis or not req.diagnosis.strip():
         raise HTTPException(status_code=400, detail="Es obligatorio proporcionar un diagnóstico final o solución aplicada para registrar el arranque.")
@@ -662,7 +754,7 @@ def register_repair_restart(req: RestartRepairRequest, db: Session = Depends(get
     return {"message": "Arranque de módulo registrado exitosamente"}
 
 @app.post("/api/replacements")
-def register_module_replacement(req: ModuleReplacementRequest, db: Session = Depends(get_db)):
+def register_module_replacement(req: ModuleReplacementRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Replace an existing module in an inverter slot with a new/spare module."""
     slot = db.query(ModuleSlot).filter(
         ModuleSlot.inverter_id == req.inverter_id.upper(),
@@ -721,7 +813,7 @@ def register_module_replacement(req: ModuleReplacementRequest, db: Session = Dep
     return {"message": f"Módulo reemplazado en {req.inverter_id.upper()} slot {req.slot_number}. Nuevo serial: {req.new_serial}"}
 
 @app.get("/api/spares")
-def get_spares(db: Session = Depends(get_db)):
+def get_spares(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """List available spare power modules."""
     spares = db.query(PowerModule).filter(PowerModule.status == "spare").all()
     return [{
@@ -732,7 +824,7 @@ def get_spares(db: Session = Depends(get_db)):
     } for sp in spares]
 
 @app.post("/api/spares")
-def add_spare(req: AddSpareModuleRequest, db: Session = Depends(get_db)):
+def add_spare(req: AddSpareModuleRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Add a new spare power module to inventory."""
     existing = db.query(PowerModule).filter(PowerModule.serial_number == req.serial_number).first()
     if existing:
@@ -756,7 +848,8 @@ def get_all_logs(
     serial_number: Optional[str] = Query(None, description="Filtrar por número serial de módulo"),
     status: Optional[str] = Query(None, description="Filtrar reparaciones por estado: open, resolved, all"),
     search: Optional[str] = Query(None, description="Búsqueda por texto libre en motivos, diagnósticos y seriales"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get audit logs for repairs and replacements with filtering support."""
     repair_query = db.query(RepairLog)
@@ -866,7 +959,7 @@ class EditReplacementLogRequest(BaseModel):
     attachment_name: Optional[str] = None
 
 @app.get("/api/modules")
-def get_all_modules(db: Session = Depends(get_db)):
+def get_all_modules(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """List all power modules in system with their status and metrics (batch queries optimized)."""
     modules = db.query(PowerModule).all()
     now = get_utc_now()
@@ -908,7 +1001,7 @@ def get_all_modules(db: Session = Depends(get_db)):
     return result
 
 @app.put("/api/modules/{old_serial}/edit-serial")
-def edit_module_serial(old_serial: str, req: EditSerialRequest, db: Session = Depends(get_db)):
+def edit_module_serial(old_serial: str, req: EditSerialRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Edit the serial number of an existing power module across all system records."""
     new_serial = req.new_serial.strip()
     if not new_serial:
@@ -961,7 +1054,7 @@ def edit_module_serial(old_serial: str, req: EditSerialRequest, db: Session = De
     return {"message": f"Serial actualizado exitosamente de '{old_serial}' a '{new_serial}'."}
 
 @app.delete("/api/modules/{serial_number}")
-def delete_module(serial_number: str, db: Session = Depends(get_db)):
+def delete_module(serial_number: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Delete a power module from inventory."""
     pm = db.query(PowerModule).filter(PowerModule.serial_number == serial_number).first()
     if not pm:
@@ -981,7 +1074,8 @@ def edit_slot_installation_date(
     inverter_id: str,
     slot_number: int,
     req: EditSlotInstallationDateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_operator_or_admin)
 ):
     """Edit the installation date and time (installed_at) for a specific module slot."""
     slot = db.query(ModuleSlot).filter(
@@ -1006,7 +1100,7 @@ def edit_slot_installation_date(
     }
 
 @app.put("/api/repairs/{repair_id}")
-def edit_repair_log(repair_id: int, req: EditRepairLogRequest, db: Session = Depends(get_db)):
+def edit_repair_log(repair_id: int, req: EditRepairLogRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Edit details of an existing repair log event for human error correction."""
     repair = db.query(RepairLog).filter(RepairLog.id == repair_id).first()
     if not repair:
@@ -1044,7 +1138,7 @@ def edit_repair_log(repair_id: int, req: EditRepairLogRequest, db: Session = Dep
     return {"message": "Registro de reparación actualizado exitosamente."}
 
 @app.put("/api/replacements/{replacement_id}")
-def edit_replacement_log(replacement_id: int, req: EditReplacementLogRequest, db: Session = Depends(get_db)):
+def edit_replacement_log(replacement_id: int, req: EditReplacementLogRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Edit details of an existing replacement log event for human error correction."""
     rep = db.query(ReplacementLog).filter(ReplacementLog.id == replacement_id).first()
     if not rep:
@@ -1063,7 +1157,7 @@ def edit_replacement_log(replacement_id: int, req: EditReplacementLogRequest, db
     return {"message": "Registro de reemplazo actualizado exitosamente."}
 
 @app.post("/api/seed/clean")
-def clean_database_for_production(db: Session = Depends(get_db)):
+def clean_database_for_production(db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Clear all repairs, replacements, and reset all operating hours to 0 while keeping current serial numbers intact."""
     if READ_ONLY_MODE:
         raise HTTPException(status_code=403, detail="Operación restringida en Modo Solo Lectura.")
@@ -1090,7 +1184,7 @@ def clean_database_for_production(db: Session = Depends(get_db)):
     return {"message": "Horas de operación restablecidas a CERO y reparaciones eliminadas. Los números seriales se han conservado."}
 
 @app.post("/api/seed/reset")
-def reset_database(db: Session = Depends(get_db)):
+def reset_database(db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
     """Reset and re-seed database with default solar farm configuration."""
     if READ_ONLY_MODE:
         raise HTTPException(status_code=403, detail="Operación restringida en Modo Solo Lectura.")
@@ -1107,7 +1201,7 @@ def reset_database(db: Session = Depends(get_db)):
     return {"message": "Base de datos reiniciada con datos por defecto de la granja solar."}
 
 @app.get("/api/export/excel")
-def export_modules_excel(db: Session = Depends(get_db)):
+def export_modules_excel(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Export complete power modules list (installed & stock) as Excel-compatible CSV file."""
     import csv
     import io
@@ -1168,18 +1262,24 @@ def export_modules_excel(db: Session = Depends(get_db)):
 # Authentication and User Management Endpoints
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    check_login_rate_limit(client_ip)
+
     user = db.query(User).filter(User.username == req.username.strip().lower()).first()
     if not user or not user.is_active or not verify_password(req.password, user.password_hash):
+        record_failed_login(client_ip)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos.")
 
     # Restrict login on public Ngrok / Stakeholder instance (READ_ONLY_MODE=true) to stakeholder role only
     if READ_ONLY_MODE and user.role != "stakeholder":
+        record_failed_login(client_ip)
         raise HTTPException(
             status_code=403, 
             detail="Acceso restringido: En el portal público de Stakeholders únicamente se permite el ingreso a usuarios con rol Stakeholder."
         )
 
+    record_successful_login(client_ip)
     token = secrets.token_hex(32)
     user_info = {
         "id": user.id,
@@ -1187,7 +1287,11 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         "full_name": user.full_name,
         "role": user.role
     }
-    SESSIONS[token] = user_info
+    expires_at = get_utc_now() + timedelta(hours=SESSION_TTL_HOURS)
+    SESSIONS[token] = {
+        "user": user_info,
+        "expires_at": expires_at
+    }
 
     return {
         "message": "Inicio de sesión exitoso",
@@ -1201,8 +1305,8 @@ def register_stakeholder(req: RegisterStakeholderRequest, db: Session = Depends(
     if not username_clean or len(username_clean) < 3:
         raise HTTPException(status_code=400, detail="El nombre de usuario debe tener al menos 3 caracteres.")
 
-    if len(req.password.strip()) < 4:
-        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 4 caracteres.")
+    if len(req.password.strip()) < 8:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres por seguridad.")
 
     existing = db.query(User).filter(User.username == username_clean).first()
     if existing:
@@ -1227,7 +1331,11 @@ def register_stakeholder(req: RegisterStakeholderRequest, db: Session = Depends(
         "full_name": new_user.full_name,
         "role": new_user.role
     }
-    SESSIONS[token] = user_info
+    expires_at = get_utc_now() + timedelta(hours=SESSION_TTL_HOURS)
+    SESSIONS[token] = {
+        "user": user_info,
+        "expires_at": expires_at
+    }
 
     return {
         "message": "Registro de Stakeholder exitoso",
@@ -1244,19 +1352,12 @@ def logout(request: Request):
     return {"message": "Sesión cerrada exitosamente."}
 
 @app.get("/api/auth/me")
-def get_current_user_profile(request: Request):
-    auth_header = request.headers.get("Authorization") or ""
-    token = auth_header.replace("Bearer ", "").strip()
-    if not token or token not in SESSIONS:
-        raise HTTPException(status_code=401, detail="Sesión no válida o expirada.")
-    return SESSIONS[token]
+def get_current_user_profile(current_user: dict = Depends(get_current_user)):
+    return current_user
 
 @app.get("/api/users")
-def get_users(request: Request, db: Session = Depends(get_db)):
-    auth_header = request.headers.get("Authorization") or ""
-    token = auth_header.replace("Bearer ", "").strip()
-    user_info = SESSIONS.get(token)
-    if not user_info or user_info.get("role") != "admin":
+def get_users(db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Acceso permitido únicamente para administradores.")
 
     users = db.query(User).all()
@@ -1270,16 +1371,16 @@ def get_users(request: Request, db: Session = Depends(get_db)):
     } for u in users]
 
 @app.post("/api/users")
-def create_user(req: CreateUserRequest, request: Request, db: Session = Depends(get_db)):
-    auth_header = request.headers.get("Authorization") or ""
-    token = auth_header.replace("Bearer ", "").strip()
-    user_info = SESSIONS.get(token)
-    if not user_info or user_info.get("role") != "admin":
+def create_user(req: CreateUserRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Acceso permitido únicamente para administradores.")
 
     username_clean = req.username.strip().lower()
     if not username_clean or len(username_clean) < 3:
         raise HTTPException(status_code=400, detail="El nombre de usuario debe tener al menos 3 caracteres.")
+
+    if len(req.password.strip()) < 8:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres por seguridad.")
 
     existing = db.query(User).filter(User.username == username_clean).first()
     if existing:
@@ -1298,18 +1399,15 @@ def create_user(req: CreateUserRequest, request: Request, db: Session = Depends(
     return {"message": f"Usuario '{username_clean}' creado exitosamente."}
 
 @app.delete("/api/users/{user_id}")
-def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
-    auth_header = request.headers.get("Authorization") or ""
-    token = auth_header.replace("Bearer ", "").strip()
-    user_info = SESSIONS.get(token)
-    if not user_info or user_info.get("role") != "admin":
+def delete_user(user_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Acceso permitido únicamente para administradores.")
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
-    if user.username == "admin" or user.id == user_info.get("id"):
+    if user.username == "admin" or user.id == current_user.get("id"):
         raise HTTPException(status_code=400, detail="No es posible eliminar la cuenta del administrador actual.")
 
     db.delete(user)
@@ -1317,7 +1415,7 @@ def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
     return {"message": f"Usuario '{user.username}' eliminado exitosamente."}
 
 @app.get("/api/export/xlsx")
-def export_modules_xlsx(db: Session = Depends(get_db)):
+def export_modules_xlsx(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Export complete solar farm data (modules, repairs, replacements) as a multi-sheet Excel .xlsx file."""
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -1469,6 +1567,13 @@ def read_root():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return JSONResponse({"message": "API de Granja Solar lista. Visite /docs para la documentación REST API."})
+
+@app.get("/login")
+def read_login_view():
+    login_path = os.path.join(STATIC_DIR, "login.html")
+    if os.path.exists(login_path):
+        return FileResponse(login_path)
+    raise HTTPException(status_code=404, detail="Vista de inicio de sesión no encontrada.")
 
 @app.get("/stakeholder")
 def read_stakeholder_view():
