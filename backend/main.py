@@ -43,16 +43,56 @@ def verify_password(password: str, password_hash: str) -> bool:
     except Exception:
         return False
 
-# In-memory session token mapping: token -> user dict
+# In-memory session token mapping: token -> {"user": user_dict, "expires_at": datetime}
 SESSIONS = {}
+SESSION_TTL_HOURS = 12
+
+# Brute-Force Rate Limiting for Login
+FAILED_LOGIN_ATTEMPTS = {}
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+def check_login_rate_limit(client_ip: str):
+    now = get_utc_now()
+    if client_ip in FAILED_LOGIN_ATTEMPTS:
+        attempt_data = FAILED_LOGIN_ATTEMPTS[client_ip]
+        if attempt_data.get("blocked_until") and now < attempt_data["blocked_until"]:
+            mins_left = int((attempt_data["blocked_until"] - now).total_seconds() // 60) + 1
+            raise HTTPException(
+                status_code=429,
+                detail=f"Demasiados intentos fallidos. Su IP ha sido bloqueada temporalmente por {mins_left} minutos."
+            )
+        elif attempt_data.get("blocked_until") and now >= attempt_data["blocked_until"]:
+            del FAILED_LOGIN_ATTEMPTS[client_ip]
+
+def record_failed_login(client_ip: str):
+    now = get_utc_now()
+    if client_ip not in FAILED_LOGIN_ATTEMPTS:
+        FAILED_LOGIN_ATTEMPTS[client_ip] = {"count": 1, "blocked_until": None}
+    else:
+        data = FAILED_LOGIN_ATTEMPTS[client_ip]
+        data["count"] += 1
+        if data["count"] >= MAX_LOGIN_ATTEMPTS:
+            data["blocked_until"] = now + timedelta(minutes=LOCKOUT_MINUTES)
+
+def record_successful_login(client_ip: str):
+    if client_ip in FAILED_LOGIN_ATTEMPTS:
+        del FAILED_LOGIN_ATTEMPTS[client_ip]
 
 def get_current_user(request: Request):
-    """Dependency to check if user is authenticated (valid token in headers)."""
+    """Dependency to check if user is authenticated (valid & non-expired token in headers)."""
     auth_header = request.headers.get("Authorization") or ""
     token = auth_header.replace("Bearer ", "").strip()
     if not token or token not in SESSIONS:
         raise HTTPException(status_code=401, detail="Sesión no válida o expirada.")
-    return SESSIONS[token]
+    
+    session_data = SESSIONS[token]
+    expires_at = session_data.get("expires_at")
+    if expires_at and get_utc_now() > expires_at:
+        del SESSIONS[token]
+        raise HTTPException(status_code=401, detail="Sesión expirada. Por favor inicie sesión nuevamente.")
+
+    return session_data["user"]
 
 def get_current_operator_or_admin(request: Request):
     """Dependency to check if user is authenticated and is admin or operator."""
@@ -73,14 +113,27 @@ DATA_DIR = os.path.dirname(os.path.abspath(engine.url.database)) if engine.url.d
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Read-Only Environment Configuration
+# Read-Only & Docs Environment Configuration
 READ_ONLY_MODE = os.getenv("READ_ONLY_MODE", "false").lower() in ["true", "1", "yes"]
+ENABLE_DOCS = os.getenv("ENABLE_DOCS", "false").lower() in ["true", "1", "yes"]
 
 app = FastAPI(
     title="Control de Módulos de Potencia - Granja Solar",
     description="API REST para seguimiento, mantenimiento y métricas de unidades de inversión y módulos de potencia.",
-    version="1.2.0"
+    version="1.2.0",
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None
 )
+
+# Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
 
 # Read-Only Middleware for Stakeholder Restricted Mode
 @app.middleware("http")
@@ -105,7 +158,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+@app.get("/uploads/{filename}")
+def serve_upload_file(filename: str, request: Request, token: Optional[str] = Query(None)):
+    """Serve uploaded attachments securely only to authenticated users."""
+    auth_header = request.headers.get("Authorization") or ""
+    auth_token = auth_header.replace("Bearer ", "").strip() or token
+    if not auth_token or auth_token not in SESSIONS:
+        raise HTTPException(status_code=401, detail="Acceso denegado: Se requiere autenticación para acceder a los archivos adjuntos.")
+
+    session_data = SESSIONS[auth_token]
+    expires_at = session_data.get("expires_at")
+    if expires_at and get_utc_now() > expires_at:
+        del SESSIONS[auth_token]
+        raise HTTPException(status_code=401, detail="Sesión expirada.")
+
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.join(UPLOAD_DIR, safe_filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado.")
+    return FileResponse(file_path)
 
 ALLOWED_ATTACHMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".txt"}
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB limit
@@ -337,11 +408,14 @@ def seed_database_if_needed(db: Session):
     db.commit()
 
 def seed_default_users_if_needed(db: Session):
+    admin_pass = os.getenv("ADMIN_PASSWORD", "SolarisAdmin2026!")
+    stakeholder_pass = os.getenv("STAKEHOLDER_PASSWORD", "SolarisViewer2026!")
+
     admin_user = db.query(User).filter(User.username == "admin").first()
     if not admin_user:
         admin_user = User(
             username="admin",
-            password_hash=hash_password("SolarisAdmin2026!"),
+            password_hash=hash_password(admin_pass),
             full_name="Administrador del Sistema",
             role="admin",
             created_at=get_utc_now(),
@@ -353,7 +427,7 @@ def seed_default_users_if_needed(db: Session):
     if not stakeholder_user:
         stakeholder_user = User(
             username="stakeholder",
-            password_hash=hash_password("SolarisViewer2026!"),
+            password_hash=hash_password(stakeholder_pass),
             full_name="Usuario Stakeholder",
             role="stakeholder",
             created_at=get_utc_now(),
@@ -1188,18 +1262,24 @@ def export_modules_excel(db: Session = Depends(get_db), current_user: dict = Dep
 # Authentication and User Management Endpoints
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    check_login_rate_limit(client_ip)
+
     user = db.query(User).filter(User.username == req.username.strip().lower()).first()
     if not user or not user.is_active or not verify_password(req.password, user.password_hash):
+        record_failed_login(client_ip)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos.")
 
     # Restrict login on public Ngrok / Stakeholder instance (READ_ONLY_MODE=true) to stakeholder role only
     if READ_ONLY_MODE and user.role != "stakeholder":
+        record_failed_login(client_ip)
         raise HTTPException(
             status_code=403, 
             detail="Acceso restringido: En el portal público de Stakeholders únicamente se permite el ingreso a usuarios con rol Stakeholder."
         )
 
+    record_successful_login(client_ip)
     token = secrets.token_hex(32)
     user_info = {
         "id": user.id,
@@ -1207,7 +1287,11 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         "full_name": user.full_name,
         "role": user.role
     }
-    SESSIONS[token] = user_info
+    expires_at = get_utc_now() + timedelta(hours=SESSION_TTL_HOURS)
+    SESSIONS[token] = {
+        "user": user_info,
+        "expires_at": expires_at
+    }
 
     return {
         "message": "Inicio de sesión exitoso",
@@ -1221,8 +1305,8 @@ def register_stakeholder(req: RegisterStakeholderRequest, db: Session = Depends(
     if not username_clean or len(username_clean) < 3:
         raise HTTPException(status_code=400, detail="El nombre de usuario debe tener al menos 3 caracteres.")
 
-    if len(req.password.strip()) < 4:
-        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 4 caracteres.")
+    if len(req.password.strip()) < 8:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres por seguridad.")
 
     existing = db.query(User).filter(User.username == username_clean).first()
     if existing:
@@ -1247,7 +1331,11 @@ def register_stakeholder(req: RegisterStakeholderRequest, db: Session = Depends(
         "full_name": new_user.full_name,
         "role": new_user.role
     }
-    SESSIONS[token] = user_info
+    expires_at = get_utc_now() + timedelta(hours=SESSION_TTL_HOURS)
+    SESSIONS[token] = {
+        "user": user_info,
+        "expires_at": expires_at
+    }
 
     return {
         "message": "Registro de Stakeholder exitoso",
@@ -1264,19 +1352,12 @@ def logout(request: Request):
     return {"message": "Sesión cerrada exitosamente."}
 
 @app.get("/api/auth/me")
-def get_current_user_profile(request: Request):
-    auth_header = request.headers.get("Authorization") or ""
-    token = auth_header.replace("Bearer ", "").strip()
-    if not token or token not in SESSIONS:
-        raise HTTPException(status_code=401, detail="Sesión no válida o expirada.")
-    return SESSIONS[token]
+def get_current_user_profile(current_user: dict = Depends(get_current_user)):
+    return current_user
 
 @app.get("/api/users")
-def get_users(request: Request, db: Session = Depends(get_db)):
-    auth_header = request.headers.get("Authorization") or ""
-    token = auth_header.replace("Bearer ", "").strip()
-    user_info = SESSIONS.get(token)
-    if not user_info or user_info.get("role") != "admin":
+def get_users(db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Acceso permitido únicamente para administradores.")
 
     users = db.query(User).all()
@@ -1290,16 +1371,16 @@ def get_users(request: Request, db: Session = Depends(get_db)):
     } for u in users]
 
 @app.post("/api/users")
-def create_user(req: CreateUserRequest, request: Request, db: Session = Depends(get_db)):
-    auth_header = request.headers.get("Authorization") or ""
-    token = auth_header.replace("Bearer ", "").strip()
-    user_info = SESSIONS.get(token)
-    if not user_info or user_info.get("role") != "admin":
+def create_user(req: CreateUserRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Acceso permitido únicamente para administradores.")
 
     username_clean = req.username.strip().lower()
     if not username_clean or len(username_clean) < 3:
         raise HTTPException(status_code=400, detail="El nombre de usuario debe tener al menos 3 caracteres.")
+
+    if len(req.password.strip()) < 8:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres por seguridad.")
 
     existing = db.query(User).filter(User.username == username_clean).first()
     if existing:
@@ -1318,18 +1399,15 @@ def create_user(req: CreateUserRequest, request: Request, db: Session = Depends(
     return {"message": f"Usuario '{username_clean}' creado exitosamente."}
 
 @app.delete("/api/users/{user_id}")
-def delete_user(user_id: int, request: Request, db: Session = Depends(get_db)):
-    auth_header = request.headers.get("Authorization") or ""
-    token = auth_header.replace("Bearer ", "").strip()
-    user_info = SESSIONS.get(token)
-    if not user_info or user_info.get("role") != "admin":
+def delete_user(user_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_operator_or_admin)):
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Acceso permitido únicamente para administradores.")
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
-    if user.username == "admin" or user.id == user_info.get("id"):
+    if user.username == "admin" or user.id == current_user.get("id"):
         raise HTTPException(status_code=400, detail="No es posible eliminar la cuenta del administrador actual.")
 
     db.delete(user)
